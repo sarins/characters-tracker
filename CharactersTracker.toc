@@ -1,0 +1,10 @@
+## Interface: 120005
+## Title: CharactersTracker
+## Notes: Tracking multiple Characters information of the Warband, 追踪战团下角色状态，包括装备、附魔及宝石以及宏伟宝库情况。
+## Version: 1.2.0
+## SavedVariables: CharactersTrackerDB
+
+# 必须先加载语言包文件
+L.lua
+
+CharactersTracker.lua
