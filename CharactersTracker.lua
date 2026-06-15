@@ -39,7 +39,12 @@ local function ScanCurrentCharacter()
   CharactersTrackerDB[guid].gear = CharactersTrackerDB[guid].gear or {}
   CharactersTrackerDB[guid].vault = CharactersTrackerDB[guid].vault or {}
 
-  -- A. 扫描当前装备
+  -- A. 扫描当前装备与装等计算
+  local _, officialIlvlEquipped = GetAverageItemLevel()
+
+  local totalIlvl = 0
+  local gearCount = 0
+
   for _, slotId in ipairs(SCAN_SLOTS) do
     local itemLink = GetInventoryItemLink("player", slotId)
     if itemLink then
@@ -52,7 +57,21 @@ local function ScanCurrentCharacter()
         level = ilvl,
         enchant = hasEnchant
       }
+
+      -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
+      -- print("NO. "..slotId..itemLink)
+      if slotId ~= 4 and slotId ~= 19 and ilvl > 0 then
+        totalIlvl = totalIlvl + ilvl
+        gearCount = gearCount + 1
+      end
     end
+  end
+
+  -- save avg level of items
+  if officialIlvlEquipped and officialIlvlEquipped > 0 then
+    CharactersTrackerDB[guid].avgIlvl = officialIlvlEquipped
+  else
+    CharactersTrackerDB[guid].avgIlvl = gearCount > 0 and tonumber(string.format("%.2f", totalIlvl / gearCount)) or 0
   end
 
   -- B. 扫描三线宏伟宝库数据（带当前大版本有效性拦截）
@@ -62,15 +81,12 @@ local function ScanCurrentCharacter()
 
       if ok and (not activities or #activities == 0) and vType.id == 2 then
         local history = C_MythicPlus.GetRunHistory(false, true) or {}
-        -- DevTools_Dump(history)
         local count = #history
         local maxLevel = 0
         for _, run in ipairs(history) do
           if run.level > maxLevel then maxLevel = run.level end
         end
 
-        -- 构造符合你原本数据结构的“伪造”活动数据
-        -- 阈值对应：1次、4次、8次大秘境（根据当前版本调整）
         activities = {
           { index = 1, progress = count, threshold = 1, level = maxLevel, activityID = "Mythic" },
           { index = 2, progress = count, threshold = 4, level = maxLevel, activityID = "Mythic" },
@@ -92,14 +108,11 @@ local function ScanCurrentCharacter()
               if activityInfo.activityID then
                 local encounterInfo = C_WeeklyRewards.GetActivityEncounterInfo(activityInfo.activityID)
                 if encounterInfo and #encounterInfo > 0 then
-                  -- 抽取该活动关联的第一个Boss的遭遇战ID，顺藤摸瓜找到其所属的副本ID (Instance ID)
                   local firstEncounter = encounterInfo[1]
                   if firstEncounter and firstEncounter.encounterID then
                     local _, _, _, _, _, journalInstanceID = C_EncounterJournal.GetEncounterInfo(firstEncounter
                       .encounterID)
 
-                    -- 利用暴雪地下城手册的原生安全判定：
-                    -- 如果该副本在当前客户端里不属于“当前大版本”的活动集合，或者返回为空，则判定为过往旧版本数据
                     if not journalInstanceID or journalInstanceID == 0 then
                       isValid = false
                     end
@@ -107,7 +120,6 @@ local function ScanCurrentCharacter()
                     isValid = false
                   end
                 else
-                  -- 如果完全拿不到BOSS列表结构，说明该格子配置在当前赛季处于关闭/废弃状态
                   isValid = false
                 end
               else
@@ -119,12 +131,10 @@ local function ScanCurrentCharacter()
             -- 【核心修复二】精准清洗过滤：非当前有效赛季的地下城格子
             -- ------------------------------------------------------------
             if vType.id == 2 then
-              -- 暴雪底层残留的旧赛季格子，其解锁阈值 threshold 往往为 0，或者根本没有合法的 activityID
               if not activityInfo.activityID or not activityInfo.threshold or activityInfo.threshold == 0 then
                 isValid = false
               end
 
-              -- 附加一层安全保险：如果该地下城格子返回的当前进度大于暴雪硬编码的最高上限（比如超过了当前赛季最高次数上限），也进行拦截
               if activityInfo.progress and activityInfo.progress > 100 then
                 isValid = false
               end
@@ -143,7 +153,6 @@ local function ScanCurrentCharacter()
             end
           end
         end
-        -- 严格按照低保格子位置（1/2/3格）由左至右排序
         table.sort(CharactersTrackerDB[guid].vault[vType.id], function(a, b) return (a.index or 0) < (b.index or 0) end)
       end
     end
@@ -215,6 +224,10 @@ local function CreateDetailWindow()
   DetailFrame.slotsUI = {}
   local colXOffsets = { 25, 80, 145, 200 }
 
+  -- 创建详细面板顶部的总装等文本显示（定位于中间两列的顶部区域）
+  DetailFrame.avgIlvlText = DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  DetailFrame.avgIlvlText:SetPoint("TOP", DetailFrame, "TOP", 0, -35)
+
   for colIdx, slots in ipairs(COLUMN_LAYOUT) do
     local startX = colXOffsets[colIdx]
     for rowIdx, slotId in ipairs(slots) do
@@ -261,6 +274,14 @@ local function ShowCharacterDetail(guid)
 
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
   DetailFrame.title:SetText(string.format("|c%s%s|r", classColor, data.name))
+
+  -- 动态更新面板顶部的平均物品等级
+  if data.avgIlvl and data.avgIlvl > 0 then
+    -- DetailFrame.avgIlvlText:SetText(string.format("|cffffffff%d|r", data.avgIlvl))
+    DetailFrame.avgIlvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
+  else
+    DetailFrame.avgIlvlText:SetText("")
+  end
 
   for _, slotId in ipairs(SCAN_SLOTS) do
     local btn = DetailFrame.slotsUI[slotId]
@@ -361,18 +382,18 @@ local function ShowCharacterVault(guid)
 
       if sData then
         if sData.progress >= sData.threshold then
-          sFrame.bg:SetColorTexture(0.1, 0.45, 0.1, 0.85) -- 绿色底（已解锁）
+          sFrame.bg:SetColorTexture(0.1, 0.45, 0.1, 0.85)
           if vType.id == 1 then
             sFrame.text:SetText(L["VT_UNLOCKED"])
           else
             sFrame.text:SetText(string.format(L["VT_LEVEL"], sData.level or 0))
           end
         else
-          sFrame.bg:SetColorTexture(0.5, 0.35, 0.05, 0.85) -- 橙色底（未解锁，呈现例如 1/4 进度）
+          sFrame.bg:SetColorTexture(0.5, 0.35, 0.05, 0.85)
           sFrame.text:SetText(string.format("%d/%d", sData.progress or 0, sData.threshold or 0))
         end
       else
-        sFrame.bg:SetColorTexture(0.25, 0.25, 0.25, 0.5) -- 灰色底（未开启）
+        sFrame.bg:SetColorTexture(0.25, 0.25, 0.25, 0.5)
         sFrame.text:SetText(L["VT_LOCKED"])
       end
     end
@@ -381,7 +402,7 @@ local function ShowCharacterVault(guid)
 end
 
 -- ==========================================
--- 5. 一级角色列表主窗 (带已被数据清洗同步的3色控制圆点)
+-- 5. 一级角色列表主窗
 -- ==========================================
 local function OpenMainWindow()
   if not MainFrame then
@@ -418,8 +439,16 @@ local function OpenMainWindow()
           })
           btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
 
+          -- 名字组件：向右限制宽度，给右侧装等留出安全对齐空间，避免长文本重叠
           btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
           btn.text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+          btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
+          btn.text:SetJustifyH("LEFT")
+
+          -- 新增：右侧装等组件，居右对齐
+          btn.ilvlText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+          btn.ilvlText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+          btn.ilvlText:SetJustifyH("RIGHT")
 
           local extraBtn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
           extraBtn:SetSize(32, 30)
@@ -447,8 +476,16 @@ local function OpenMainWindow()
         local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
         btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
 
+        -- 动态显示角色的平均物品等级
+        if data.avgIlvl and data.avgIlvl > 0 then
+          -- btn.ilvlText:SetText(string.format("|cffffd100%d|r", data.avgIlvl))
+          btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
+        else
+          btn.ilvlText:SetText("|cff888888--|r")
+        end
+
         -- ------------------------------------------------------------
-        -- 【状态同步算法】由于源头数据已被高精度清洗，此处的圆点状态绝不会再被旧数据污染
+        -- 【状态同步算法】
         -- ------------------------------------------------------------
         local totalSlots = 0
         local completedSlots = 0
@@ -470,11 +507,11 @@ local function OpenMainWindow()
         end
 
         if totalSlots == 0 or totalProgress == 0 then
-          btn.extraBtn.statusDot:SetVertexColor(0.4, 0.4, 0.4, 0.85)   -- 灰色：当前大版本无任何有效进度
+          btn.extraBtn.statusDot:SetVertexColor(0.4, 0.4, 0.4, 0.85)
         elseif completedSlots == totalSlots and totalSlots > 0 then
-          btn.extraBtn.statusDot:SetVertexColor(0.1, 0.75, 0.1, 0.95)  -- 绿色：当前版本激活的所有格子全部满额解锁
+          btn.extraBtn.statusDot:SetVertexColor(0.1, 0.75, 0.1, 0.95)
         else
-          btn.extraBtn.statusDot:SetVertexColor(0.85, 0.65, 0.1, 0.95) -- 黄色：有当前版本有效进度，但还未完全解锁
+          btn.extraBtn.statusDot:SetVertexColor(0.85, 0.65, 0.1, 0.95)
         end
         -- ------------------------------------------------------------
 
