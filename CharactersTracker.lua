@@ -64,6 +64,8 @@ local function ScanCurrentCharacter()
         totalIlvl = totalIlvl + ilvl
         gearCount = gearCount + 1
       end
+    else
+      CharactersTrackerDB[guid].gear[slotId] = {}
     end
   end
 
