@@ -27,6 +27,8 @@ L["VT_LEVEL"] = "Tier %d"
 L["VT_LOCKED"] = "N/A"
 L["CHOOSE_CHARACTER"] = "Characters"
 L["GEAR_DETAIL"] = "Gear Detail"
+L["CURR_TIP_L1"] = "No local currency data available"
+L["CURR_TIP_L2"] = "Log in to this character to sync"
 
 -- ====================================================================
 -- 简体中文环境 (zhCN)
@@ -44,4 +46,6 @@ if currentLocale == "zhCN" then
   L["VT_LOCKED"] = "未开始"
   L["CHOOSE_CHARACTER"] = "角色选择"
   L["GEAR_DETAIL"] = "详细装备"
+  L["CURR_TIP_L1"] = "暂无该角色的非战网共享货币数据"
+  L["CURR_TIP_L2"] = "请切换登录该角色以同步数据"
 end

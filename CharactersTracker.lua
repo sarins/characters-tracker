@@ -20,6 +20,23 @@ local VAULT_TYPES = {
   { id = 6, name = L["VT_DW"] }
 }
 
+-- 【新增配置】声明需要追踪的常用非战网共享货币 ID 列表（可根据 11.x/12.0 赛季需求自行增减 ID）
+local TRACKED_CURRENCIES = {
+  3028, -- 修复的宝匣钥匙
+  3310, -- 宝匣钥匙碎片
+  2803, -- 晦幽铸币
+  3356, -- 未被污染的法力水晶
+  3418, -- 晦暗虚空核心
+  3378, -- 黎明之光法力熔剂
+  3383, -- 冒险者曙光纹章
+  3341, -- 老兵曙光纹章
+  3343, -- 勇士曙光纹章
+  3345, -- 英雄曙光纹章
+  3347, -- 神话曙光纹章
+  1792, -- 荣誉点数
+  1602, -- 征服点数
+}
+
 local MainFrame, DetailFrame, VaultFrame, FloatingButton
 
 -- ==========================================
@@ -59,7 +76,6 @@ local function ScanCurrentCharacter()
       }
 
       -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
-      -- print("NO. "..slotId..itemLink)
       if slotId ~= 4 and slotId ~= 19 and ilvl > 0 then
         totalIlvl = totalIlvl + ilvl
         gearCount = gearCount + 1
@@ -103,9 +119,7 @@ local function ScanCurrentCharacter()
           if activityInfo and activityInfo.index then
             local isValid = true
 
-            -- ------------------------------------------------------------
             -- 【核心修复一】精准清洗过滤：非当前大版本的团队副本格子
-            -- ------------------------------------------------------------
             if vType.id == 1 then
               if activityInfo.activityID then
                 local encounterInfo = C_WeeklyRewards.GetActivityEncounterInfo(activityInfo.activityID)
@@ -129,9 +143,7 @@ local function ScanCurrentCharacter()
               end
             end
 
-            -- ------------------------------------------------------------
             -- 【核心修复二】精准清洗过滤：非当前有效赛季的地下城格子
-            -- ------------------------------------------------------------
             if vType.id == 2 then
               if not activityInfo.activityID or not activityInfo.threshold or activityInfo.threshold == 0 then
                 isValid = false
@@ -142,9 +154,7 @@ local function ScanCurrentCharacter()
               end
             end
 
-            -- ------------------------------------------------------------
             -- 只有真正通过了当前大版本/当前赛季校验的数据，才允许记入本地数据库
-            -- ------------------------------------------------------------
             if isValid then
               table.insert(CharactersTrackerDB[guid].vault[vType.id], {
                 index = activityInfo.index,
@@ -157,6 +167,24 @@ local function ScanCurrentCharacter()
         end
         table.sort(CharactersTrackerDB[guid].vault[vType.id], function(a, b) return (a.index or 0) < (b.index or 0) end)
       end
+    end
+  end
+
+  -- ------------------------------------------------------------
+  -- 【数据层无损追加】清洗并抓取当前角色的非战网共享货币数据
+  -- ------------------------------------------------------------
+  CharactersTrackerDB[guid].currencies = {}
+  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    -- 核心安全过滤：必须存在，且不能是战网共享货币
+    if info and not info.isAccountWide then
+      CharactersTrackerDB[guid].currencies[currencyID] = {
+        name = info.name,
+        quantity = info.quantity,
+        icon = info.iconFileID,
+        maxWeeklyQuantity = info.maxWeeklyQuantity or 0,
+        quantityEarnedThisWeek = info.quantityEarnedThisWeek or 0,
+      }
     end
   end
 end
@@ -279,7 +307,6 @@ local function ShowCharacterDetail(guid)
 
   -- 动态更新面板顶部的平均物品等级
   if data.avgIlvl and data.avgIlvl > 0 then
-    -- DetailFrame.avgIlvlText:SetText(string.format("|cffffffff%d|r", data.avgIlvl))
     DetailFrame.avgIlvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
   else
     DetailFrame.avgIlvlText:SetText("")
@@ -384,7 +411,7 @@ local function ShowCharacterVault(guid)
 
       if sData then
         if sData.progress >= sData.threshold then
-          sFrame.bg:SetColorTexture(0.1, 0.45, 0.1, 0.85)
+          rowUI.slots[j].bg:SetColorTexture(0.1, 0.45, 0.1, 0.85)
           if vType.id == 1 then
             sFrame.text:SetText(L["VT_UNLOCKED"])
           else
@@ -401,6 +428,63 @@ local function ShowCharacterVault(guid)
     end
   end
   VaultFrame:Show()
+end
+
+-- ------------------------------------------------------------
+-- 【UI层无损追加】独立鼠标悬浮渲染货币 Tooltip 函数 (已修正为指定配置顺序)
+-- ------------------------------------------------------------
+local function ShowCurrencyTooltip(ownerFrame, guid)
+  if not guid or not CharactersTrackerDB then return end
+  local data = CharactersTrackerDB[guid]
+  if not data or not data.name then return end
+
+  GameTooltip:SetOwner(ownerFrame, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+
+  -- 标题栏：显示 [服务器-角色名]，颜色沿用职业高亮色
+  local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
+  GameTooltip:AddLine(string.format("|c%s%s|r - %s", classColor, data.name, data.realm or ""))
+  GameTooltip:AddLine(" ") -- 空行隔离线
+
+  -- 检测并使用 ipairs 严格按照 TRACKED_CURRENCIES 指定的顺序进行有序迭代渲染
+  if data.currencies and next(data.currencies) then
+    local hasAnyOutput = false
+    for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+      local cData = data.currencies[currencyID]
+      if cData then
+        hasAnyOutput = true
+        -- 1、2列：左侧 [图标]  [货币名称]
+        local iconStr = string.format("|T%d:14:14:0:0|t", cData.icon)
+        local leftColumn = string.format("%s  %s", iconStr, cData.name)
+
+        -- 3列：右侧高亮当前数量
+        local qtyStr = string.format("|cffffffff%d|r", cData.quantity)
+
+        -- 4列：右侧灰色周进度数据
+        local weeklyStr = ""
+        if cData.maxWeeklyQuantity and cData.maxWeeklyQuantity > 0 then
+          weeklyStr = string.format(" |cffaaaaaa(%d/%d)|r", cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
+          -- else
+          --   weeklyStr = " |cff666666(无周上限)|r"
+        end
+
+        local rightColumn = qtyStr .. weeklyStr
+
+        -- 4 列无缝完美左右两端对齐
+        GameTooltip:AddDoubleLine(leftColumn, rightColumn, 1, 1, 1, 1, 1, 1)
+      end
+    end
+
+    if not hasAnyOutput then
+      GameTooltip:AddLine(L["CURR_TIP_L1"], 0.5, 0.5, 0.5)
+      GameTooltip:AddLine(L["CURR_TIP_L2"], 0.5, 0.5, 0.5)
+    end
+  else
+    GameTooltip:AddLine(L["CURR_TIP_L1"], 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(L["CURR_TIP_L2"], 0.5, 0.5, 0.5)
+  end
+
+  GameTooltip:Show()
 end
 
 -- ==========================================
@@ -427,6 +511,7 @@ local function OpenMainWindow()
   local index = 0
   if CharactersTrackerDB then
     for guid, data in pairs(CharactersTrackerDB) do
+      -- 排除非角色节点配置（如窗口坐标记录节点等字符串 Key）
       if type(data) == "table" and data.name then
         index = index + 1
         local btn = MainFrame.buttons[index]
@@ -480,7 +565,6 @@ local function OpenMainWindow()
 
         -- 动态显示角色的平均物品等级
         if data.avgIlvl and data.avgIlvl > 0 then
-          -- btn.ilvlText:SetText(string.format("|cffffd100%d|r", data.avgIlvl))
           btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
         else
           btn.ilvlText:SetText("|cff888888--|r")
@@ -519,6 +603,19 @@ local function OpenMainWindow()
 
         btn:SetScript("OnClick", function() ShowCharacterDetail(guid) end)
         btn.extraBtn:SetScript("OnClick", function() ShowCharacterVault(guid) end)
+
+        -- ------------------------------------------------------------
+        -- 【UI层无损注入】接管行按钮的悬浮事件，高亮背景并触发 4 列悬浮窗
+        -- ------------------------------------------------------------
+        btn:SetScript("OnEnter", function(self)
+          btn:SetBackdropColor(0.25, 0.25, 0.25, 0.8) -- 优雅的悬浮反馈
+          ShowCurrencyTooltip(self, guid)
+        end)
+
+        btn:SetScript("OnLeave", function()
+          btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6) -- 恢复你原生的底色
+          GameTooltip:Hide()
+        end)
 
         btn:Show()
         btn.extraBtn:Show()
@@ -588,6 +685,7 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("WEEKLY_REWARDS_UPDATE")
+eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE") -- 【安全追加】监听游戏内任何货币数字变动
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
   if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
@@ -608,7 +706,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
       VaultFrame:ClearAllPoints()
       VaultFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
     end
-  elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEEKLY_REWARDS_UPDATE" then
+  elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEEKLY_REWARDS_UPDATE" or event == "CURRENCY_DISPLAY_UPDATE" then
     if C_WeeklyRewards and C_WeeklyRewards.RequestActivityInfo then
       pcall(C_WeeklyRewards.RequestActivityInfo)
     end
@@ -617,7 +715,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
       CreateFloatingButton()
     end
 
-    -- 留出 1.5 秒安全等待延迟，确保暴雪服务器完整下发角色低保元数据后再执行清洗提取
+    -- 留出 1.5 秒安全等待延迟，确保暴雪服务器完整下发角色低保及货币元数据后再执行清洗提取
     C_Timer.After(1.5, function() ScanCurrentCharacter() end)
   end
 end)
