@@ -184,6 +184,8 @@ local function ScanCurrentCharacter()
         icon = info.iconFileID,
         maxWeeklyQuantity = info.maxWeeklyQuantity or 0,
         quantityEarnedThisWeek = info.quantityEarnedThisWeek or 0,
+        maxQuantity = info.maxQuantity or 0,
+        totalEarned = info.totalEarned or 0,
       }
     end
   end
@@ -463,9 +465,16 @@ local function ShowCurrencyTooltip(ownerFrame, guid)
         -- 4列：右侧灰色周进度数据
         local weeklyStr = ""
         if cData.maxWeeklyQuantity and cData.maxWeeklyQuantity > 0 then
-          weeklyStr = string.format(" |cffaaaaaa(%d/%d)|r", cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
+          weeklyStr = string.format(L["CURR_WEEKLY_LIMIT"], cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
           -- else
           --   weeklyStr = " |cff666666(无周上限)|r"
+        end
+        if cData.maxQuantity and cData.maxQuantity > 0 then
+          if cData.totalEarned and cData.totalEarned > 0 then
+            weeklyStr = string.format(L["CURR_SEASON_LIMIT"], cData.totalEarned, cData.maxQuantity)
+          else
+            weeklyStr = string.format(L["CURR_LIMIT"], cData.quantity, cData.maxQuantity)
+          end
         end
 
         local rightColumn = qtyStr .. weeklyStr
@@ -488,8 +497,63 @@ local function ShowCurrencyTooltip(ownerFrame, guid)
 end
 
 -- ==========================================
--- 5. 一级角色列表主窗
+-- 5. 一级角色列表主窗与拖拽排序核心
 -- ==========================================
+-- 刷新并重新对齐所有可见的按钮（无视觉卡顿，平滑布局）
+local function RearrangeCharacterButtons()
+  if not MainFrame or not CharactersTrackerDB or not CharactersTrackerDB.order then return end
+
+  local index = 0
+  for _, guid in ipairs(CharactersTrackerDB.order) do
+    local btn = MainFrame.guidToButton[guid]
+    if btn and btn:IsShown() then
+      index = index + 1
+      btn:ClearAllPoints()
+      -- 如果当前按钮正在被玩家拖拽，则由 OnUpdate 接管其位置，不通过此函数强制锚定
+      if not btn.isDragging then
+        btn:SetPoint("TOPLEFT", MainFrame.content, "TOPLEFT", 2, -(index - 1) * 34)
+      end
+      if btn.extraBtn then
+        btn.extraBtn:ClearAllPoints()
+        btn.extraBtn:SetPoint("LEFT", btn, "RIGHT", 4, 0)
+      end
+    end
+  end
+  -- 动态调整 ScrollChild 的高度，确保滚动条完美适配
+  MainFrame.content:SetSize(286, math.max(1, index * 34))
+end
+
+-- 拖拽时的动态坐标更新与视觉位置重构
+local function OnCharacterButtonUpdate(self)
+  if not self.isDragging then return end
+
+  local _, relativeTo, _, _, yOfs = self:GetPoint()
+  -- 计算当前被拖拽按钮相对于主列表容器顶部的绝对行数位置
+  local currentFrameY = self:GetTop()
+  local parentTop = MainFrame.content:GetTop()
+  if not currentFrameY or not parentTop then return end
+
+  local relativeY = parentTop - currentFrameY
+  local targetIndex = math.floor((relativeY + 17) / 34) + 1
+  targetIndex = math.max(1, math.min(targetIndex, #CharactersTrackerDB.order))
+
+  -- 寻找该按钮在数据库中的旧索引
+  local oldIndex = 0
+  for idx, guid in ipairs(CharactersTrackerDB.order) do
+    if guid == self.guid then
+      oldIndex = idx
+      break
+    end
+  end
+
+  -- 当检测到跨行时，动态重排底层数组，并刷新其他未拖拽按钮的锚点位置
+  if oldIndex > 0 and oldIndex ~= targetIndex then
+    table.remove(CharactersTrackerDB.order, oldIndex)
+    table.insert(CharactersTrackerDB.order, targetIndex, self.guid)
+    RearrangeCharacterButtons()
+  end
+end
+
 local function OpenMainWindow()
   if not MainFrame then
     MainFrame = CreateBaseWindow("CGT_MainFrame", 360, 360, L["CHOOSE_CHARACTER"], "MainFramePosition")
@@ -501,127 +565,193 @@ local function OpenMainWindow()
     MainFrame.content:SetSize(200, 1)
     MainFrame.scrollFrame:SetScrollChild(MainFrame.content)
     MainFrame.buttons = {}
+    MainFrame.guidToButton = {} -- 高效查表反查映射器
   end
 
+  -- 干净重置：隐藏所有现有组件
   for _, btn in ipairs(MainFrame.buttons) do
     btn:Hide()
     if btn.extraBtn then btn.extraBtn:Hide() end
   end
+  table.wipe(MainFrame.guidToButton)
 
+  if not CharactersTrackerDB then CharactersTrackerDB = {} end
+  if not CharactersTrackerDB.order then CharactersTrackerDB.order = {} end
+
+  -- 【双向安全同步过滤器】清洗缓存的角色列表顺序
+  local activeGuids = {}
+  for guid, data in pairs(CharactersTrackerDB) do
+    if type(data) == "table" and data.name and guid ~= "order" then
+      activeGuids[guid] = true
+    end
+  end
+
+  -- 1. 清理已被删号或不存在的老旧失效 GUID 节点
+  for i = #CharactersTrackerDB.order, 1, -1 do
+    if not activeGuids[CharactersTrackerDB.order[i]] then
+      table.remove(CharactersTrackerDB.order, i)
+    end
+  end
+
+  -- 2. 补全首次载入、或者新建立的未建序角色节点
+  for guid in pairs(activeGuids) do
+    local exists = false
+    for _, orderedGuid in ipairs(CharactersTrackerDB.order) do
+      if orderedGuid == guid then
+        exists = true
+        break
+      end
+    end
+    if not exists then
+      table.insert(CharactersTrackerDB.order, guid)
+    end
+  end
+
+  -- 开始有序渲染角色行 UI 元素
   local index = 0
-  if CharactersTrackerDB then
-    for guid, data in pairs(CharactersTrackerDB) do
-      -- 排除非角色节点配置（如窗口坐标记录节点等字符串 Key）
-      if type(data) == "table" and data.name then
-        index = index + 1
-        local btn = MainFrame.buttons[index]
-        if not btn then
-          btn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
-          btn:SetSize(286, 30)
-          btn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 }
-          })
-          btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
+  for _, guid in ipairs(CharactersTrackerDB.order) do
+    local data = CharactersTrackerDB[guid]
+    if data and data.name then
+      index = index + 1
+      local btn = MainFrame.buttons[index]
+      if not btn then
+        btn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
+        btn:SetSize(286, 30)
+        btn:SetBackdrop({
+          bgFile = "Interface\\Buttons\\WHITE8X8",
+          edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+          edgeSize = 8,
+          insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
 
-          -- 名字组件：向右限制宽度，给右侧装等留出安全对齐空间，避免长文本重叠
-          btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-          btn.text:SetPoint("LEFT", btn, "LEFT", 8, 0)
-          btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
-          btn.text:SetJustifyH("LEFT")
+        -- 名字组件：向右限制宽度，给右侧装等留出安全对齐空间，避免长文本重叠
+        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btn.text:SetPoint("LEFT", btn, "LEFT", 8, 0)
+        btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
+        btn.text:SetJustifyH("LEFT")
 
-          -- 新增：右侧装等组件，居右对齐
-          btn.ilvlText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-          btn.ilvlText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
-          btn.ilvlText:SetJustifyH("RIGHT")
+        -- 新增：右侧装等组件，居右对齐
+        btn.ilvlText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.ilvlText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+        btn.ilvlText:SetJustifyH("RIGHT")
 
-          local extraBtn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
-          extraBtn:SetSize(32, 30)
-          extraBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 8,
-            insets = { left = 2, right = 2, top = 2, bottom = 2 }
-          })
-          extraBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
+        local extraBtn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
+        extraBtn:SetSize(32, 30)
+        extraBtn:SetBackdrop({
+          bgFile = "Interface\\Buttons\\WHITE8X8",
+          edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+          edgeSize = 8,
+          insets = { left = 2, right = 2, top = 2, bottom = 2 }
+        })
+        extraBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
 
-          local statusDot = extraBtn:CreateTexture(nil, "OVERLAY")
-          statusDot:SetSize(21, 21)
-          statusDot:SetPoint("CENTER", extraBtn, "CENTER", 0, 0)
-          statusDot:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+        local statusDot = extraBtn:CreateTexture(nil, "OVERLAY")
+        statusDot:SetSize(21, 21)
+        statusDot:SetPoint("CENTER", extraBtn, "CENTER", 0, 0)
+        statusDot:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
 
-          extraBtn.statusDot = statusDot
-          btn.extraBtn = extraBtn
-          MainFrame.buttons[index] = btn
-        end
-
-        btn:SetPoint("TOPLEFT", MainFrame.content, "TOPLEFT", 2, -(index - 1) * 34)
-        btn.extraBtn:SetPoint("LEFT", btn, "RIGHT", 4, 0)
-
-        local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
-        btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
-
-        -- 动态显示角色的平均物品等级
-        if data.avgIlvl and data.avgIlvl > 0 then
-          btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
-        else
-          btn.ilvlText:SetText("|cff888888--|r")
-        end
+        extraBtn.statusDot = statusDot
+        btn.extraBtn = extraBtn
+        MainFrame.buttons[index] = btn
 
         -- ------------------------------------------------------------
-        -- 【状态同步算法】
+        -- 【核心注入】为角色行组件绑定无损拖拽手势交互事件
         -- ------------------------------------------------------------
-        local totalSlots = 0
-        local completedSlots = 0
-        local totalProgress = 0
+        btn:SetMovable(true)
+        btn:RegisterForDrag("LeftButton")
 
-        if data.vault then
-          for _, vTypeId in ipairs({ 1, 2, 6 }) do
-            local typeData = data.vault[vTypeId]
-            if typeData then
-              for _, sData in ipairs(typeData) do
-                totalSlots = totalSlots + 1
-                totalProgress = totalProgress + (sData.progress or 0)
-                if sData.progress and sData.threshold and sData.progress >= sData.threshold then
-                  completedSlots = completedSlots + 1
-                end
+        btn:SetScript("OnDragStart", function(self)
+          -- 触发拖拽时临时调整层级并中断父级滚动视图交互，避免冲突
+          self.isDragging = true
+          self:SetFrameStrata("TOOLTIP")
+          if self.extraBtn then self.extraBtn:SetFrameStrata("TOOLTIP") end
+          self:StartMoving()
+          self:SetScript("OnUpdate", OnCharacterButtonUpdate)
+          GameTooltip:Hide()
+        end)
+
+        btn:SetScript("OnDragStop", function(self)
+          self.isDragging = false
+          self:StopMovingOrSizing()
+          self:SetScript("OnUpdate", nil)
+          self:SetFrameStrata("MEDIUM")
+          if self.extraBtn then self.extraBtn:SetFrameStrata("MEDIUM") end
+          -- 释放拖拽时完美复位并对齐全行
+          RearrangeCharacterButtons()
+        end)
+      end
+
+      -- 记录动态反查标识符
+      btn.guid = guid
+      MainFrame.guidToButton[guid] = btn
+
+      local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
+      btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
+
+      -- 动态显示角色的平均物品等级
+      if data.avgIlvl and data.avgIlvl > 0 then
+        btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
+      else
+        btn.ilvlText:SetText("|cff888888--|r")
+      end
+
+      -- ------------------------------------------------------------
+      -- 【状态同步算法】
+      -- ------------------------------------------------------------
+      local totalSlots = 0
+      local completedSlots = 0
+      local totalProgress = 0
+
+      if data.vault then
+        for _, vTypeId in ipairs({ 1, 2, 6 }) do
+          local typeData = data.vault[vTypeId]
+          if typeData then
+            for _, sData in ipairs(typeData) do
+              totalSlots = totalSlots + 1
+              totalProgress = totalProgress + (sData.progress or 0)
+              if sData.progress and sData.threshold and sData.progress >= sData.threshold then
+                completedSlots = completedSlots + 1
               end
             end
           end
         end
+      end
 
-        if totalSlots == 0 or totalProgress == 0 then
-          btn.extraBtn.statusDot:SetVertexColor(0.4, 0.4, 0.4, 0.85)
-        elseif completedSlots == totalSlots and totalSlots > 0 then
-          btn.extraBtn.statusDot:SetVertexColor(0.1, 0.75, 0.1, 0.95)
-        else
-          btn.extraBtn.statusDot:SetVertexColor(0.85, 0.65, 0.1, 0.95)
-        end
-        -- ------------------------------------------------------------
+      if totalSlots == 0 or totalProgress == 0 then
+        btn.extraBtn.statusDot:SetVertexColor(0.4, 0.4, 0.4, 0.85)
+      elseif completedSlots == totalSlots and totalSlots > 0 then
+        btn.extraBtn.statusDot:SetVertexColor(0.1, 0.75, 0.1, 0.95)
+      else
+        btn.extraBtn.statusDot:SetVertexColor(0.85, 0.65, 0.1, 0.95)
+      end
+      -- ------------------------------------------------------------
 
-        btn:SetScript("OnClick", function() ShowCharacterDetail(guid) end)
-        btn.extraBtn:SetScript("OnClick", function() ShowCharacterVault(guid) end)
+      btn:SetScript("OnClick", function() ShowCharacterDetail(guid) end)
+      btn.extraBtn:SetScript("OnClick", function() ShowCharacterVault(guid) end)
 
-        -- ------------------------------------------------------------
-        -- 【UI层无损注入】接管行按钮的悬浮事件，高亮背景并触发 4 列悬浮窗
-        -- ------------------------------------------------------------
-        btn:SetScript("OnEnter", function(self)
+      -- ------------------------------------------------------------
+      -- 【UI层无损注入】接管行按钮的悬浮事件，高亮背景并触发 4 列悬浮窗
+      -- ------------------------------------------------------------
+      btn:SetScript("OnEnter", function(self)
+        if not self.isDragging then
           btn:SetBackdropColor(0.25, 0.25, 0.25, 0.8) -- 优雅的悬浮反馈
           ShowCurrencyTooltip(self, guid)
-        end)
+        end
+      end)
 
-        btn:SetScript("OnLeave", function()
-          btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6) -- 恢复你原生的底色
-          GameTooltip:Hide()
-        end)
+      btn:SetScript("OnLeave", function()
+        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6) -- 恢复你原生的底色
+        GameTooltip:Hide()
+      end)
 
-        btn:Show()
-        btn.extraBtn:Show()
-      end
+      btn:Show()
+      if btn.extraBtn then btn.extraBtn:Show() end
     end
   end
+
+  -- 执行一次整体对齐排列
+  RearrangeCharacterButtons()
   MainFrame:Show()
 end
 

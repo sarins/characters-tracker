@@ -29,6 +29,9 @@ L["CHOOSE_CHARACTER"] = "Characters"
 L["GEAR_DETAIL"] = "Gear Detail"
 L["CURR_TIP_L1"] = "No local currency data available"
 L["CURR_TIP_L2"] = "Log in to this character to sync"
+L["CURR_WEEKLY_LIMIT"] = " |cff0070dd(%d/%d) Weekly|r"
+L["CURR_SEASON_LIMIT"] = " |cffff8000(%d/%d) Season|r"
+L["CURR_LIMIT"] = " |cffffd100(%d/%d)|r"
 
 -- ====================================================================
 -- 简体中文环境 (zhCN)
@@ -48,4 +51,7 @@ if currentLocale == "zhCN" then
   L["GEAR_DETAIL"] = "详细装备"
   L["CURR_TIP_L1"] = "暂无该角色的非战网共享货币数据"
   L["CURR_TIP_L2"] = "请切换登录该角色以同步数据"
+  L["CURR_WEEKLY_LIMIT"] = " |cff0070dd(%d/%d) 每周|r"
+  L["CURR_SEASON_LIMIT"] = " |cffff8000(%d/%d) 赛季|r"
+  L["CURR_LIMIT"] = " |cffffd100(%d/%d)|r"
 end
