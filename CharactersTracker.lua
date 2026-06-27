@@ -20,7 +20,7 @@ local VAULT_TYPES = {
   { id = 6, name = L["VT_DW"] }
 }
 
--- 【新增配置】声明需要追踪的常用非战网共享货币 ID 列表（可根据 11.x/12.0 赛季需求自行增减 ID）
+-- 声明需要追踪的常用非战网共享货币 ID 列表
 local TRACKED_CURRENCIES = {
   3028, -- 修复的宝匣钥匙
   3310, -- 宝匣钥匙碎片
@@ -37,7 +37,15 @@ local TRACKED_CURRENCIES = {
   1602, -- 征服点数
 }
 
-local MainFrame, DetailFrame, VaultFrame, FloatingButton
+local MainFrame, DetailFrame, VaultFrame, FloatingButton, InventoryFrame
+local AGGREGATED_ITEMS = {} -- 全局聚合清洗后的检索池
+local FILTERED_ITEMS = {}   -- 搜索/过滤后的当前显示池
+
+local ITEMS_PER_PAGE = 40   -- 5x8 网格布局，每页 40 个格子
+local CURRENT_PAGE = 1
+
+-- 转发前置声明，确保代码块顺序调用安全
+local ToggleInventoryWindow
 
 -- ==========================================
 -- 1. 数据收集核心 (加入当前大版本/当前赛季双重安全过滤)
@@ -170,13 +178,10 @@ local function ScanCurrentCharacter()
     end
   end
 
-  -- ------------------------------------------------------------
-  -- 【数据层无损追加】清洗并抓取当前角色的非战网共享货币数据
-  -- ------------------------------------------------------------
+  -- C. 洗并抓取当前角色的非战网共享货币数据
   CharactersTrackerDB[guid].currencies = {}
   for _, currencyID in ipairs(TRACKED_CURRENCIES) do
     local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-    -- 核心安全过滤：必须存在，且不能是战网共享货币
     if info and not info.isAccountWide then
       CharactersTrackerDB[guid].currencies[currencyID] = {
         name = info.name,
@@ -189,6 +194,61 @@ local function ScanCurrentCharacter()
       }
     end
   end
+
+  -- ------------------------------------------------------------
+  -- 【无损追加】精准清洗并抓取当前角色的随身背包数据 (0-5)
+  -- ------------------------------------------------------------
+  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
+  for _, b in pairs({ 0, 1, 2, 3, 4, 5 }) do
+    CharactersTrackerDB[guid].bags[b] = {}
+    local numSlots = C_Container.GetContainerNumSlots(b) or 0
+    if numSlots > 0 then
+      for s = 1, numSlots do
+        local info = C_Container.GetContainerItemInfo(b, s)
+        if info and info.itemID then
+          CharactersTrackerDB[guid].bags[b][s] = {
+            id = info.itemID,
+            count = info.stackCount,
+            link = info.hyperlink,
+            icon = info.iconFileID,
+            quality = info.quality
+          }
+        end
+      end
+    end
+  end
+end
+
+-- 【新增】专用于扫描个人银行扩展栏位（6-11）的独立函数
+local function ScanCharacterBank()
+  if not CharactersTrackerDB then return end
+  local guid = UnitGUID("player")
+  if not guid then return end
+
+  if not CharactersTrackerDB[guid] then CharactersTrackerDB[guid] = {} end
+  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
+
+  -- 严格锁定在 6-11 号银行扩展背包栏位，移除了 -1 号主银行
+  local bankSlots = { 6, 7, 8, 9, 10, 11 }
+  for _, b in pairs(bankSlots) do
+    CharactersTrackerDB[guid].bags[b] = {}
+    local numSlots = C_Container.GetContainerNumSlots(b) or 0
+    if numSlots > 0 then
+      for s = 1, numSlots do
+        local info = C_Container.GetContainerItemInfo(b, s)
+        if info and info.itemID then
+          CharactersTrackerDB[guid].bags[b][s] = {
+            id = info.itemID,
+            count = info.stackCount,
+            link = info.hyperlink,
+            icon = info.iconFileID,
+            quality = info.quality
+          }
+        end
+      end
+    end
+  end
+  CharactersTrackerDB[guid].lastUpdate = time()
 end
 
 -- ==========================================
@@ -256,7 +316,7 @@ local function CreateDetailWindow()
   DetailFrame.slotsUI = {}
   local colXOffsets = { 25, 80, 145, 200 }
 
-  -- 创建详细面板顶部的总装等文本显示（定位于中间两列的顶部区域）
+  -- 创建详细面板顶部的总装等文本显示
   DetailFrame.avgIlvlText = DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   DetailFrame.avgIlvlText:SetPoint("TOP", DetailFrame, "TOP", 0, -35)
 
@@ -307,7 +367,6 @@ local function ShowCharacterDetail(guid)
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
   DetailFrame.title:SetText(string.format("|c%s%s|r", classColor, data.name))
 
-  -- 动态更新面板顶部的平均物品等级
   if data.avgIlvl and data.avgIlvl > 0 then
     DetailFrame.avgIlvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
   else
@@ -432,9 +491,7 @@ local function ShowCharacterVault(guid)
   VaultFrame:Show()
 end
 
--- ------------------------------------------------------------
--- 【UI层无损追加】独立鼠标悬浮渲染货币 Tooltip 函数 (已修正为指定配置顺序)
--- ------------------------------------------------------------
+-- 独立鼠标悬浮渲染货币 Tooltip 函数
 local function ShowCurrencyTooltip(ownerFrame, guid)
   if not guid or not CharactersTrackerDB then return end
   local data = CharactersTrackerDB[guid]
@@ -443,31 +500,22 @@ local function ShowCurrencyTooltip(ownerFrame, guid)
   GameTooltip:SetOwner(ownerFrame, "ANCHOR_RIGHT")
   GameTooltip:ClearLines()
 
-  -- 标题栏：显示 [服务器-角色名]，颜色沿用职业高亮色
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
   GameTooltip:AddLine(string.format("|c%s%s|r - %s", classColor, data.name, data.realm or ""))
-  GameTooltip:AddLine(" ") -- 空行隔离线
+  GameTooltip:AddLine(" ")
 
-  -- 检测并使用 ipairs 严格按照 TRACKED_CURRENCIES 指定的顺序进行有序迭代渲染
   if data.currencies and next(data.currencies) then
     local hasAnyOutput = false
     for _, currencyID in ipairs(TRACKED_CURRENCIES) do
       local cData = data.currencies[currencyID]
       if cData then
         hasAnyOutput = true
-        -- 1、2列：左侧 [图标]  [货币名称]
         local iconStr = string.format("|T%d:14:14:0:0|t", cData.icon)
         local leftColumn = string.format("%s  %s", iconStr, cData.name)
-
-        -- 3列：右侧高亮当前数量
         local qtyStr = string.format("|cffffffff%d|r", cData.quantity)
-
-        -- 4列：右侧灰色周进度数据
         local weeklyStr = ""
         if cData.maxWeeklyQuantity and cData.maxWeeklyQuantity > 0 then
           weeklyStr = string.format(L["CURR_WEEKLY_LIMIT"], cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
-          -- else
-          --   weeklyStr = " |cff666666(无周上限)|r"
         end
         if cData.maxQuantity and cData.maxQuantity > 0 then
           if cData.totalEarned and cData.totalEarned > 0 then
@@ -478,8 +526,6 @@ local function ShowCurrencyTooltip(ownerFrame, guid)
         end
 
         local rightColumn = qtyStr .. weeklyStr
-
-        -- 4 列无缝完美左右两端对齐
         GameTooltip:AddDoubleLine(leftColumn, rightColumn, 1, 1, 1, 1, 1, 1)
       end
     end
@@ -499,7 +545,6 @@ end
 -- ==========================================
 -- 5. 一级角色列表主窗与拖拽排序核心
 -- ==========================================
--- 刷新并重新对齐所有可见的按钮（无视觉卡顿，平滑布局）
 local function RearrangeCharacterButtons()
   if not MainFrame or not CharactersTrackerDB or not CharactersTrackerDB.order then return end
 
@@ -509,7 +554,6 @@ local function RearrangeCharacterButtons()
     if btn and btn:IsShown() then
       index = index + 1
       btn:ClearAllPoints()
-      -- 如果当前按钮正在被玩家拖拽，则由 OnUpdate 接管其位置，不通过此函数强制锚定
       if not btn.isDragging then
         btn:SetPoint("TOPLEFT", MainFrame.content, "TOPLEFT", 2, -(index - 1) * 34)
       end
@@ -519,16 +563,13 @@ local function RearrangeCharacterButtons()
       end
     end
   end
-  -- 动态调整 ScrollChild 的高度，确保滚动条完美适配
   MainFrame.content:SetSize(286, math.max(1, index * 34))
 end
 
--- 拖拽时的动态坐标更新与视觉位置重构
 local function OnCharacterButtonUpdate(self)
   if not self.isDragging then return end
 
   local _, relativeTo, _, _, yOfs = self:GetPoint()
-  -- 计算当前被拖拽按钮相对于主列表容器顶部的绝对行数位置
   local currentFrameY = self:GetTop()
   local parentTop = MainFrame.content:GetTop()
   if not currentFrameY or not parentTop then return end
@@ -537,7 +578,6 @@ local function OnCharacterButtonUpdate(self)
   local targetIndex = math.floor((relativeY + 17) / 34) + 1
   targetIndex = math.max(1, math.min(targetIndex, #CharactersTrackerDB.order))
 
-  -- 寻找该按钮在数据库中的旧索引
   local oldIndex = 0
   for idx, guid in ipairs(CharactersTrackerDB.order) do
     if guid == self.guid then
@@ -546,7 +586,6 @@ local function OnCharacterButtonUpdate(self)
     end
   end
 
-  -- 当检测到跨行时，动态重排底层数组，并刷新其他未拖拽按钮的锚点位置
   if oldIndex > 0 and oldIndex ~= targetIndex then
     table.remove(CharactersTrackerDB.order, oldIndex)
     table.insert(CharactersTrackerDB.order, targetIndex, self.guid)
@@ -565,10 +604,9 @@ local function OpenMainWindow()
     MainFrame.content:SetSize(200, 1)
     MainFrame.scrollFrame:SetScrollChild(MainFrame.content)
     MainFrame.buttons = {}
-    MainFrame.guidToButton = {} -- 高效查表反查映射器
+    MainFrame.guidToButton = {}
   end
 
-  -- 干净重置：隐藏所有现有组件
   for _, btn in ipairs(MainFrame.buttons) do
     btn:Hide()
     if btn.extraBtn then btn.extraBtn:Hide() end
@@ -578,7 +616,6 @@ local function OpenMainWindow()
   if not CharactersTrackerDB then CharactersTrackerDB = {} end
   if not CharactersTrackerDB.order then CharactersTrackerDB.order = {} end
 
-  -- 【双向安全同步过滤器】清洗缓存的角色列表顺序
   local activeGuids = {}
   for guid, data in pairs(CharactersTrackerDB) do
     if type(data) == "table" and data.name and guid ~= "order" then
@@ -586,14 +623,12 @@ local function OpenMainWindow()
     end
   end
 
-  -- 1. 清理已被删号或不存在的老旧失效 GUID 节点
   for i = #CharactersTrackerDB.order, 1, -1 do
     if not activeGuids[CharactersTrackerDB.order[i]] then
       table.remove(CharactersTrackerDB.order, i)
     end
   end
 
-  -- 2. 补全首次载入、或者新建立的未建序角色节点
   for guid in pairs(activeGuids) do
     local exists = false
     for _, orderedGuid in ipairs(CharactersTrackerDB.order) do
@@ -607,7 +642,6 @@ local function OpenMainWindow()
     end
   end
 
-  -- 开始有序渲染角色行 UI 元素
   local index = 0
   for _, guid in ipairs(CharactersTrackerDB.order) do
     local data = CharactersTrackerDB[guid]
@@ -625,13 +659,11 @@ local function OpenMainWindow()
         })
         btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
 
-        -- 名字组件：向右限制宽度，给右侧装等留出安全对齐空间，避免长文本重叠
         btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         btn.text:SetPoint("LEFT", btn, "LEFT", 8, 0)
         btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
         btn.text:SetJustifyH("LEFT")
 
-        -- 新增：右侧装等组件，居右对齐
         btn.ilvlText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.ilvlText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
         btn.ilvlText:SetJustifyH("RIGHT")
@@ -655,14 +687,10 @@ local function OpenMainWindow()
         btn.extraBtn = extraBtn
         MainFrame.buttons[index] = btn
 
-        -- ------------------------------------------------------------
-        -- 【核心注入】为角色行组件绑定无损拖拽手势交互事件
-        -- ------------------------------------------------------------
         btn:SetMovable(true)
         btn:RegisterForDrag("LeftButton")
 
         btn:SetScript("OnDragStart", function(self)
-          -- 触发拖拽时临时调整层级并中断父级滚动视图交互，避免冲突
           self.isDragging = true
           self:SetFrameStrata("TOOLTIP")
           if self.extraBtn then self.extraBtn:SetFrameStrata("TOOLTIP") end
@@ -677,19 +705,16 @@ local function OpenMainWindow()
           self:SetScript("OnUpdate", nil)
           self:SetFrameStrata("MEDIUM")
           if self.extraBtn then self.extraBtn:SetFrameStrata("MEDIUM") end
-          -- 释放拖拽时完美复位并对齐全行
           RearrangeCharacterButtons()
         end)
       end
 
-      -- 记录动态反查标识符
       btn.guid = guid
       MainFrame.guidToButton[guid] = btn
 
       local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
       btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
 
-      -- 动态显示角色的平均物品等级
       if data.avgIlvl and data.avgIlvl > 0 then
         btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
       else
@@ -730,18 +755,15 @@ local function OpenMainWindow()
       btn:SetScript("OnClick", function() ShowCharacterDetail(guid) end)
       btn.extraBtn:SetScript("OnClick", function() ShowCharacterVault(guid) end)
 
-      -- ------------------------------------------------------------
-      -- 【UI层无损注入】接管行按钮的悬浮事件，高亮背景并触发 4 列悬浮窗
-      -- ------------------------------------------------------------
       btn:SetScript("OnEnter", function(self)
         if not self.isDragging then
-          btn:SetBackdropColor(0.25, 0.25, 0.25, 0.8) -- 优雅的悬浮反馈
+          btn:SetBackdropColor(0.25, 0.25, 0.25, 0.8)
           ShowCurrencyTooltip(self, guid)
         end
       end)
 
       btn:SetScript("OnLeave", function()
-        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6) -- 恢复你原生的底色
+        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
         GameTooltip:Hide()
       end)
 
@@ -750,7 +772,6 @@ local function OpenMainWindow()
     end
   end
 
-  -- 执行一次整体对齐排列
   RearrangeCharacterButtons()
   MainFrame:Show()
 end
@@ -785,15 +806,22 @@ local function CreateFloatingButton()
     end
   end)
 
-  FloatingButton:SetScript("OnClick", function()
-    if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+  -- 改动：支持左键开启列表、右键开启战团全资产统计
+  FloatingButton:RegisterForClicks("AnyUp")
+  FloatingButton:SetScript("OnClick", function(self, button)
+    if button == "RightButton" then
+      ToggleInventoryWindow()
+    else
+      if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+    end
   end)
 
   FloatingButton:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_LEFT")
     GameTooltip:SetText(L["FB_FUNC"], 1, 1, 1)
-    GameTooltip:AddLine(L["FB_L1"], 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(L["FB_L2"], 0.8, 0.8, 0.8)
+    GameTooltip:AddLine(L["FB_L1"], 0.2, 1.0, 0.2)
+    GameTooltip:AddLine(L["FB_L2"], 0.4, 0.8, 0.2)
+    GameTooltip:AddLine(L["FB_L3"], 0.4, 0.8, 0.2)
     GameTooltip:Show()
   end)
   FloatingButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -815,7 +843,9 @@ eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("WEEKLY_REWARDS_UPDATE")
-eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE") -- 【安全追加】监听游戏内任何货币数字变动
+eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+eventFrame:RegisterEvent("BANKFRAME_OPENED")        -- 【无损注入】监听银行打开
+eventFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED") -- 【无损注入】监听银行发生物理变化
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1)
   if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
@@ -829,13 +859,15 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if DetailFrame and CharactersTrackerDB["DetailFramePosition"] then
       local pos = CharactersTrackerDB["DetailFramePosition"]
       DetailFrame:ClearAllPoints()
-      DetailFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+      DetailFrame:SetPoint(pos.point, UIParent, pos.relativePoint, xOfs, yOfs)
     end
     if VaultFrame and CharactersTrackerDB["VaultFramePosition"] then
       local pos = CharactersTrackerDB["VaultFramePosition"]
       VaultFrame:ClearAllPoints()
       VaultFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
     end
+  elseif event == "BANKFRAME_OPENED" or event == "PLAYERBANKSLOTS_CHANGED" then
+    ScanCharacterBank()
   elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEEKLY_REWARDS_UPDATE" or event == "CURRENCY_DISPLAY_UPDATE" then
     if C_WeeklyRewards and C_WeeklyRewards.RequestActivityInfo then
       pcall(C_WeeklyRewards.RequestActivityInfo)
@@ -845,16 +877,255 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
       CreateFloatingButton()
     end
 
-    -- 留出 1.5 秒安全等待延迟，确保暴雪服务器完整下发角色低保及货币元数据后再执行清洗提取
     C_Timer.After(1.5, function() ScanCurrentCharacter() end)
   end
 end)
+
+-- ==========================================
+-- 9. 【全新功能】战团资产汇总与网格检索面板
+-- ==========================================
+local function GetContainerNameText(bagID)
+  if bagID >= 0 and bagID <= 4 then
+    return L["INV_LOC_BAG"]
+  elseif bagID == 5 then
+    return L["INV_LOC_REAGENT_BAG"]
+  elseif bagID >= 6 and bagID <= 11 then
+    return L["INV_LOC_BANK"]
+  else
+    return L["INV_LOC_OTHERS"]
+  end
+end
+
+local function AggregateWarbandItems()
+  table.wipe(AGGREGATED_ITEMS)
+  if not CharactersTrackerDB then return end
+
+  for guid, charData in pairs(CharactersTrackerDB) do
+    if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
+      local charNameWithRealm = string.format("%s-%s", charData.name, charData.realm or GetRealmName())
+      local classColor = RAID_CLASS_COLORS[charData.class] and RAID_CLASS_COLORS[charData.class].colorStr or "ffffffff"
+
+      for bagID, bagData in pairs(charData.bags) do
+        for slotID, item in pairs(bagData) do
+          if item and item.id then
+            if not AGGREGATED_ITEMS[item.id] then
+              AGGREGATED_ITEMS[item.id] = {
+                id = item.id,
+                name = item.link and (GetItemInfo(item.link) or item.link:match("%[(.-)%]")) or L["INV_LOADING"],
+                icon = item.icon or 134400,
+                quality = item.quality or 1,
+                link = item.link,
+                totalCount = 0,
+                sources = {}
+              }
+            end
+
+            AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
+
+            local srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
+            local locText = GetContainerNameText(bagID)
+            if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
+              AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
+            end
+            AGGREGATED_ITEMS[item.id].sources[srcKey][locText] = (AGGREGATED_ITEMS[item.id].sources[srcKey][locText] or 0) +
+                item.count
+          end
+        end
+      end
+    end
+  end
+end
+
+local function FilterAndSortItems(searchText)
+  table.wipe(FILTERED_ITEMS)
+  searchText = searchText and string.lower(strtrim(searchText)) or ""
+
+  for _, item in pairs(AGGREGATED_ITEMS) do
+    local match = false
+    if searchText == "" then
+      match = true
+    else
+      local itemName = string.lower(item.name or "")
+      if string.find(itemName, searchText, 1, true) or string.find(tostring(item.id), searchText, 1, true) then
+        match = true
+      end
+    end
+
+    if match then
+      table.insert(FILTERED_ITEMS, item)
+    end
+  end
+
+  table.sort(FILTERED_ITEMS, function(a, b)
+    if a.quality ~= b.quality then
+      return (a.quality or 0) > (b.quality or 0)
+    else
+      return (a.id or 0) > (b.id or 0)
+    end
+  end)
+end
+
+local function UpdateInventoryGrid()
+  if not InventoryFrame then return end
+
+  local totalItems = #FILTERED_ITEMS
+  local maxPages = math.max(1, math.ceil(totalItems / ITEMS_PER_PAGE))
+  if CURRENT_PAGE > maxPages then CURRENT_PAGE = maxPages end
+
+  InventoryFrame.pageText:SetText(string.format("%d / %d", CURRENT_PAGE, maxPages))
+
+  local startIndex = (CURRENT_PAGE - 1) * ITEMS_PER_PAGE
+
+  for i = 1, ITEMS_PER_PAGE do
+    local gridBtn = InventoryFrame.grids[i]
+    local itemData = FILTERED_ITEMS[startIndex + i]
+
+    if itemData then
+      gridBtn.icon:SetTexture(itemData.icon)
+      gridBtn.countText:SetText(itemData.totalCount)
+      gridBtn.itemData = itemData
+      gridBtn:Show()
+
+      if itemData.quality and itemData.quality > 1 then
+        local r, g, b = C_Item.GetItemQualityColor(itemData.quality)
+        gridBtn:SetBackdropBorderColor(r, g, b, 1)
+      else
+        gridBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.4)
+      end
+    else
+      gridBtn.itemData = nil
+      gridBtn:Hide()
+    end
+  end
+end
+
+local function CreateInventoryWindow()
+  if InventoryFrame then return end
+
+  InventoryFrame = CreateBaseWindow("CGT_InventoryFrame", 640, 560, L["INV_TITLE"], "InventoryFramePosition")
+  InventoryFrame:Hide()
+
+  local searchBox = CreateFrame("EditBox", nil, InventoryFrame, "InputBoxTemplate")
+  searchBox:SetSize(604, 24)
+  searchBox:SetPoint("TOPLEFT", InventoryFrame, "TOPLEFT", 21, -35)
+  searchBox:SetAutoFocus(false)
+
+  local sLabel = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  sLabel:SetPoint("LEFT", searchBox, "LEFT", 5, 0)
+  sLabel:SetText(L["INV_SEARCH_TIP"])
+
+  searchBox:SetScript("OnTextChanged", function(self)
+    if self:GetText() == "" then sLabel:Show() else sLabel:Hide() end
+    FilterAndSortItems(self:GetText())
+    CURRENT_PAGE = 1
+    UpdateInventoryGrid()
+  end)
+  searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+  InventoryFrame.grids = {}
+  local startX = 15
+  local startY = -80
+  local spacingX = 14
+  local spacingY = 24
+  local iconSide = 64
+
+  for row = 0, 4 do
+    for col = 0, 7 do
+      local btn = CreateFrame("Button", nil, InventoryFrame, "BackdropTemplate")
+      btn:SetSize(iconSide, iconSide)
+      btn.icon = btn:CreateTexture(nil, "BACKGROUND")
+      btn.icon:SetAllPoints(btn)
+      -- btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+      btn.countText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      btn.countText:SetPoint("TOP", btn, "BOTTOM", 0, 0)
+
+      btn:SetPoint("TOPLEFT", InventoryFrame, "TOPLEFT", startX + (col * (spacingX + iconSide)),
+        startY - (row * (spacingY + iconSide)))
+
+      btn:SetScript("OnClick", function(self)
+        if self.itemData and self.itemData.link and IsShiftKeyDown() then
+          local editBox = ChatEdit_GetActiveWindow()
+          if editBox then editBox:Insert(self.itemData.link) end
+        end
+      end)
+
+      btn:SetScript("OnEnter", function(self)
+        if not self.itemData then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        if self.itemData.link then
+          GameTooltip:SetHyperlink(self.itemData.link)
+        else
+          GameTooltip:SetText(self.itemData.name)
+        end
+
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(L["INV_DETAIL"])
+
+        for charInfo, locations in pairs(self.itemData.sources) do
+          for locName, count in pairs(locations) do
+            GameTooltip:AddDoubleLine("  " .. charInfo .. " [" .. locName .. "]", "|cffffffff(" .. count .. ")|r", 0.9,
+              0.9, 0.9, 1, 1, 1)
+          end
+        end
+        GameTooltip:Show()
+      end)
+      btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+      table.insert(InventoryFrame.grids, btn)
+    end
+  end
+
+  local prevBtn = CreateFrame("Button", nil, InventoryFrame, "GameMenuButtonTemplate")
+  prevBtn:SetSize(96, 24)
+  prevBtn:SetPoint("BOTTOMLEFT", InventoryFrame, "BOTTOMLEFT", 64, 12)
+  prevBtn:SetText("<")
+  prevBtn:SetScript("OnClick", function()
+    if CURRENT_PAGE > 1 then
+      CURRENT_PAGE = CURRENT_PAGE - 1
+      UpdateInventoryGrid()
+    end
+  end)
+
+  local nextBtn = CreateFrame("Button", nil, InventoryFrame, "GameMenuButtonTemplate")
+  nextBtn:SetSize(96, 24)
+  nextBtn:SetPoint("BOTTOMRIGHT", InventoryFrame, "BOTTOMRIGHT", -64, 12)
+  nextBtn:SetText(">")
+  nextBtn:SetScript("OnClick", function()
+    local maxPages = math.max(1, math.ceil(#FILTERED_ITEMS / ITEMS_PER_PAGE))
+    if CURRENT_PAGE < maxPages then
+      CURRENT_PAGE = CURRENT_PAGE + 1
+      UpdateInventoryGrid()
+    end
+  end)
+
+  local pageText = InventoryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  pageText:SetPoint("CENTER", InventoryFrame, "BOTTOM", 0, 26)
+  InventoryFrame.pageText = pageText
+end
+
+ToggleInventoryWindow = function()
+  CreateInventoryWindow()
+  if InventoryFrame:IsShown() then
+    InventoryFrame:Hide()
+  else
+    AggregateWarbandItems()
+    FilterAndSortItems("")
+    CURRENT_PAGE = 1
+    UpdateInventoryGrid()
+    InventoryFrame:Show()
+  end
+end
 
 -- ==========================================
 -- 8. 命令注册
 -- ==========================================
 SLASH_WBCT1 = "/wbct"
 SLASH_WBCT2 = "/ct"
-SlashCmdList["WBCT"] = function()
-  if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+SlashCmdList["WBCT"] = function(msg)
+  if msg == "bag" or msg == "inv" then
+    ToggleInventoryWindow()
+  else
+    if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+  end
 end
