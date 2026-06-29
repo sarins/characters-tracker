@@ -37,9 +37,11 @@ L["INV_TITLE"] = "Inventory Summary"
 L["INV_LOADING"] = "Loading..."
 L["INV_SEARCH_TIP"] = "Search..."
 L["INV_DETAIL"] = "|cffffd100Inventory Detail:|r"
+L["INV_SRC_WARBAND"] = "|cff66bbffWarband|r"
 L["INV_LOC_BAG"] = "Bag"
 L["INV_LOC_REAGENT_BAG"] = "Reagent Bag"
 L["INV_LOC_BANK"] = "Bank"
+L["INV_LOC_WARBAND_BANK"] = "Warband Bank"
 L["INV_LOC_OTHERS"] = "Others"
 
 -- ====================================================================
@@ -68,8 +70,10 @@ if currentLocale == "zhCN" then
   L["INV_LOADING"] = "加载中..."
   L["INV_SEARCH_TIP"] = "搜索..."
   L["INV_DETAIL"] = "|cffffd100物品存储明细:|r"
+  L["INV_SRC_WARBAND"] = "|cff66bbff战团|r"
   L["INV_LOC_BAG"] = "背包"
   L["INV_LOC_REAGENT_BAG"] = "材料包"
   L["INV_LOC_BANK"] = "银行"
+  L["INV_LOC_WARBAND_BANK"] = "战团银行"
   L["INV_LOC_OTHERS"] = "其他"
 end

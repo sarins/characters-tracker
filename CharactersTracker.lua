@@ -3,6 +3,8 @@
 -- ====================================================================
 local L = CharactersTracker_Locale
 
+-- code "\226\137\136" represent ≈ symbol
+local SYMBOL_APPROX_EQ = "\226\137\136"
 local SCAN_SLOTS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19 }
 
 -- 装备 4 列精确布局
@@ -37,6 +39,9 @@ local TRACKED_CURRENCIES = {
   1602, -- 征服点数
 }
 
+local BAG_SLOTS = { 0, 1, 2, 3, 4, 5 }
+local BANK_SLOTS = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+
 local MainFrame, DetailFrame, VaultFrame, FloatingButton, InventoryFrame
 local AGGREGATED_ITEMS = {} -- 全局聚合清洗后的检索池
 local FILTERED_ITEMS = {}   -- 搜索/过滤后的当前显示池
@@ -46,61 +51,91 @@ local CURRENT_PAGE = 1
 
 -- 转发前置声明，确保代码块顺序调用安全
 local ToggleInventoryWindow
+local isBankOpen = false
+local guid
 
--- ==========================================
--- 1. 数据收集核心 (加入当前大版本/当前赛季双重安全过滤)
--- ==========================================
-local function ScanCurrentCharacter()
+local DEBUG = false
+local function DP(...)
+  if DEBUG then
+    print(...)
+  end
+end
+
+local function DbCheck()
   if not CharactersTrackerDB then CharactersTrackerDB = {} end
-  local guid = UnitGUID("player")
-  if not guid then return end
+end
 
-  -- 安全初始化角色节点
+local function InitCharacterCache()
   if not CharactersTrackerDB[guid] then CharactersTrackerDB[guid] = {} end
   CharactersTrackerDB[guid].name = UnitName("player")
   CharactersTrackerDB[guid].realm = GetRealmName()
   CharactersTrackerDB[guid].class = select(2, UnitClass("player"))
-  CharactersTrackerDB[guid].lastUpdate = time()
   CharactersTrackerDB[guid].gear = CharactersTrackerDB[guid].gear or {}
   CharactersTrackerDB[guid].vault = CharactersTrackerDB[guid].vault or {}
+  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
+  CharactersTrackerDB[guid].currencies = {}
+end
 
-  -- A. 扫描当前装备与装等计算
-  local _, officialIlvlEquipped = GetAverageItemLevel()
+local function ScanCharacterCurrencies()
+  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    if info and not info.isAccountWide then
+      CharactersTrackerDB[guid].currencies[currencyID] = {
+        name = info.name,
+        quantity = info.quantity,
+        icon = info.iconFileID,
+        maxWeeklyQuantity = info.maxWeeklyQuantity or 0,
+        quantityEarnedThisWeek = info.quantityEarnedThisWeek or 0,
+        maxQuantity = info.maxQuantity or 0,
+        totalEarned = info.totalEarned or 0,
+      }
+    end
+  end
+end
 
-  local totalIlvl = 0
+local function ScanCharacterGears()
+  -- Try to get official equipped item level
+  local _, officialEquippedLevel = GetAverageItemLevel()
+
+  local sumLevel = 0
   local gearCount = 0
 
   for _, slotId in ipairs(SCAN_SLOTS) do
     local itemLink = GetInventoryItemLink("player", slotId)
     if itemLink then
-      local ilvl = C_Item.GetDetailedItemLevelInfo(itemLink) or 0
+      local itemLevel = C_Item.GetDetailedItemLevelInfo(itemLink) or 0
       local _, enchantId = string.split(":", itemLink)
       local hasEnchant = (enchantId and enchantId ~= "" and enchantId ~= "0") and true or false
 
       CharactersTrackerDB[guid].gear[slotId] = {
         link = itemLink,
-        level = ilvl,
+        level = itemLevel,
         enchant = hasEnchant
       }
-
       -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
-      if slotId ~= 4 and slotId ~= 19 and ilvl > 0 then
-        totalIlvl = totalIlvl + ilvl
+      if slotId ~= 4 and slotId ~= 19 and itemLevel > 0 then
+        sumLevel = sumLevel + itemLevel
         gearCount = gearCount + 1
       end
     else
       CharactersTrackerDB[guid].gear[slotId] = {}
     end
   end
-
   -- save avg level of items
-  if officialIlvlEquipped and officialIlvlEquipped > 0 then
-    CharactersTrackerDB[guid].avgIlvl = officialIlvlEquipped
+  if officialEquippedLevel and officialEquippedLevel > 0 then
+    CharactersTrackerDB[guid].equippedLevel = officialEquippedLevel
+    CharactersTrackerDB[guid].officialLevel = true
   else
-    CharactersTrackerDB[guid].avgIlvl = gearCount > 0 and tonumber(string.format("%.2f", totalIlvl / gearCount)) or 0
+    if gearCount > 0 then
+      CharactersTrackerDB[guid].equippedLevel = tonumber(string.format("%.2f", sumLevel / gearCount)) or 0
+    else
+      CharactersTrackerDB[guid].equippedLevel = 0
+    end
+    CharactersTrackerDB[guid].officialLevel = false
   end
+end
 
-  -- B. 扫描三线宏伟宝库数据（带当前大版本有效性拦截）
+local function ScanCharacterRewards()
   if C_WeeklyRewards and C_WeeklyRewards.GetActivities then
     for _, vType in ipairs(VAULT_TYPES) do
       local ok, activities = pcall(C_WeeklyRewards.GetActivities, vType.id)
@@ -112,7 +147,6 @@ local function ScanCurrentCharacter()
         for _, run in ipairs(history) do
           if run.level > maxLevel then maxLevel = run.level end
         end
-
         activities = {
           { index = 1, progress = count, threshold = 1, level = maxLevel, activityID = "Mythic" },
           { index = 2, progress = count, threshold = 4, level = maxLevel, activityID = "Mythic" },
@@ -122,11 +156,9 @@ local function ScanCurrentCharacter()
 
       if activities then
         CharactersTrackerDB[guid].vault[vType.id] = {}
-
         for _, activityInfo in ipairs(activities) do
           if activityInfo and activityInfo.index then
             local isValid = true
-
             -- 【核心修复一】精准清洗过滤：非当前大版本的团队副本格子
             if vType.id == 1 then
               if activityInfo.activityID then
@@ -136,7 +168,6 @@ local function ScanCurrentCharacter()
                   if firstEncounter and firstEncounter.encounterID then
                     local _, _, _, _, _, journalInstanceID = C_EncounterJournal.GetEncounterInfo(firstEncounter
                       .encounterID)
-
                     if not journalInstanceID or journalInstanceID == 0 then
                       isValid = false
                     end
@@ -150,7 +181,6 @@ local function ScanCurrentCharacter()
                 isValid = false
               end
             end
-
             -- 【核心修复二】精准清洗过滤：非当前有效赛季的地下城格子
             if vType.id == 2 then
               if not activityInfo.activityID or not activityInfo.threshold or activityInfo.threshold == 0 then
@@ -161,7 +191,6 @@ local function ScanCurrentCharacter()
                 isValid = false
               end
             end
-
             -- 只有真正通过了当前大版本/当前赛季校验的数据，才允许记入本地数据库
             if isValid then
               table.insert(CharactersTrackerDB[guid].vault[vType.id], {
@@ -177,82 +206,68 @@ local function ScanCurrentCharacter()
       end
     end
   end
+end
 
-  -- C. 洗并抓取当前角色的非战网共享货币数据
-  CharactersTrackerDB[guid].currencies = {}
-  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
-    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-    if info and not info.isAccountWide then
-      CharactersTrackerDB[guid].currencies[currencyID] = {
-        name = info.name,
-        quantity = info.quantity,
-        icon = info.iconFileID,
-        maxWeeklyQuantity = info.maxWeeklyQuantity or 0,
-        quantityEarnedThisWeek = info.quantityEarnedThisWeek or 0,
-        maxQuantity = info.maxQuantity or 0,
-        totalEarned = info.totalEarned or 0,
-      }
-    end
-  end
+-- unsafe function, check info valid before use.
+local function ConvertBagInfo(info)
+  return {
+    id = info.itemID,
+    count = info.stackCount,
+    link = info.hyperlink,
+    icon = info.iconFileID,
+    quality = info.quality
+  }
+end
 
-  -- ------------------------------------------------------------
-  -- 【无损追加】精准清洗并抓取当前角色的随身背包数据 (0-5)
-  -- ------------------------------------------------------------
-  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
-  for _, b in pairs({ 0, 1, 2, 3, 4, 5 }) do
-    CharactersTrackerDB[guid].bags[b] = {}
-    local numSlots = C_Container.GetContainerNumSlots(b) or 0
-    if numSlots > 0 then
-      for s = 1, numSlots do
-        local info = C_Container.GetContainerItemInfo(b, s)
-        if info and info.itemID then
-          CharactersTrackerDB[guid].bags[b][s] = {
-            id = info.itemID,
-            count = info.stackCount,
-            link = info.hyperlink,
-            icon = info.iconFileID,
-            quality = info.quality
-          }
-        end
+local function ScanBagSlots(bag)
+  local numSlots = C_Container.GetContainerNumSlots(bag) or 0
+  if numSlots > 0 then
+    CharactersTrackerDB[guid].bags[bag] = {}
+    for s = 1, numSlots do
+      local info = C_Container.GetContainerItemInfo(bag, s)
+      if info and info.itemID then
+        CharactersTrackerDB[guid].bags[bag][s] = ConvertBagInfo(info)
       end
     end
+  end
+  DP("P: " .. guid .. ", bag: " .. bag .. " has been scan.")
+end
+
+local function ScanCharacterBags()
+  for _, b in pairs(BAG_SLOTS) do
+    ScanBagSlots(b)
   end
 end
 
--- 【新增】专用于扫描个人银行扩展栏位（6-11）的独立函数
-local function ScanCharacterBank()
-  if not CharactersTrackerDB then return end
-  local guid = UnitGUID("player")
-  if not guid then return end
-
-  if not CharactersTrackerDB[guid] then CharactersTrackerDB[guid] = {} end
-  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
-
-  -- 严格锁定在 6-11 号银行扩展背包栏位，移除了 -1 号主银行
-  local bankSlots = { 6, 7, 8, 9, 10, 11 }
-  for _, b in pairs(bankSlots) do
-    CharactersTrackerDB[guid].bags[b] = {}
-    local numSlots = C_Container.GetContainerNumSlots(b) or 0
-    if numSlots > 0 then
-      for s = 1, numSlots do
-        local info = C_Container.GetContainerItemInfo(b, s)
-        if info and info.itemID then
-          CharactersTrackerDB[guid].bags[b][s] = {
-            id = info.itemID,
-            count = info.stackCount,
-            link = info.hyperlink,
-            icon = info.iconFileID,
-            quality = info.quality
-          }
-        end
+local function ScanBankSlots(bank)
+  if not isBankOpen then
+    return
+  end
+  local numSlots = C_Container.GetContainerNumSlots(bank) or 0
+  if numSlots > 0 then
+    local bankSlots = {}
+    for s = 1, numSlots do
+      if not isBankOpen then
+        break
+      end
+      local info = C_Container.GetContainerItemInfo(bank, s)
+      if info and info.itemID then
+        bankSlots[s] = ConvertBagInfo(info)
       end
     end
+    CharactersTrackerDB[guid].bags[bank] = bankSlots
   end
-  CharactersTrackerDB[guid].lastUpdate = time()
+  DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
+end
+
+local function ScanCharacterBanks()
+  for _, b in pairs(BANK_SLOTS) do
+    ScanBankSlots(b)
+  end
 end
 
 -- ==========================================
--- 2. 通用 UI 窗体工厂
+-- 通用UI窗体工厂
 -- ==========================================
 local function CreateBaseWindow(name, width, height, titleText, dbKey)
   local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
@@ -306,7 +321,7 @@ local function CreateBaseWindow(name, width, height, titleText, dbKey)
 end
 
 -- ==========================================
--- 3. 创建二级纯色/图标混合面板 (角色装备详情)
+-- 角色装备详情
 -- ==========================================
 local function CreateDetailWindow()
   if DetailFrame then return end
@@ -317,8 +332,8 @@ local function CreateDetailWindow()
   local colXOffsets = { 25, 80, 145, 200 }
 
   -- 创建详细面板顶部的总装等文本显示
-  DetailFrame.avgIlvlText = DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  DetailFrame.avgIlvlText:SetPoint("TOP", DetailFrame, "TOP", 0, -35)
+  DetailFrame.equippedLevelText = DetailFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  DetailFrame.equippedLevelText:SetPoint("TOP", DetailFrame, "TOP", 0, -35)
 
   for colIdx, slots in ipairs(COLUMN_LAYOUT) do
     local startX = colXOffsets[colIdx]
@@ -335,8 +350,8 @@ local function CreateDetailWindow()
       slotBtn.icon:SetAllPoints(slotBtn)
       slotBtn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
-      slotBtn.ilvlText = slotBtn:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
-      slotBtn.ilvlText:SetPoint("BOTTOMRIGHT", slotBtn, "BOTTOMRIGHT", -1, 1)
+      slotBtn.itemLevelText = slotBtn:CreateFontString(nil, "OVERLAY", "NumberFontNormalSmall")
+      slotBtn.itemLevelText:SetPoint("BOTTOMRIGHT", slotBtn, "BOTTOMRIGHT", -1, 1)
 
       slotBtn.enchantDot = slotBtn:CreateTexture(nil, "OVERLAY")
       slotBtn.enchantDot:SetSize(6, 6)
@@ -367,10 +382,14 @@ local function ShowCharacterDetail(guid)
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
   DetailFrame.title:SetText(string.format("|c%s%s|r", classColor, data.name))
 
-  if data.avgIlvl and data.avgIlvl > 0 then
-    DetailFrame.avgIlvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
+  if data.equippedLevel and data.equippedLevel > 0 then
+    if data.officialLevel then
+      DetailFrame.equippedLevelText:SetText(string.format("|cffffd100%.2f|r", data.equippedLevel))
+    else
+      DetailFrame.equippedLevelText:SetText(string.format("|cffffd100%s%.2f|r", SYMBOL_APPROX_EQ, data.equippedLevel))
+    end
   else
-    DetailFrame.avgIlvlText:SetText("")
+    DetailFrame.equippedLevelText:SetText("")
   end
 
   for _, slotId in ipairs(SCAN_SLOTS) do
@@ -382,7 +401,7 @@ local function ShowCharacterDetail(guid)
       btn.icon:SetColorTexture(1, 1, 1, 1)
       btn.icon:SetTexture(itemTexture or 134400)
       btn.itemLink = gear.link
-      btn.ilvlText:SetText(gear.level > 0 and gear.level or "")
+      btn.itemLevelText:SetText(gear.level > 0 and gear.level or "")
 
       if gear.enchant then btn.enchantDot:Show() else btn.enchantDot:Hide() end
 
@@ -402,7 +421,7 @@ local function ShowCharacterDetail(guid)
     else
       btn.icon:SetColorTexture(0.2, 0.2, 0.2, 0.4)
       btn.itemLink = nil
-      btn.ilvlText:SetText("")
+      btn.itemLevelText:SetText("")
       btn.enchantDot:Hide()
       btn:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.8)
       btn:SetScript("OnEnter", nil)
@@ -412,7 +431,7 @@ local function ShowCharacterDetail(guid)
 end
 
 -- ==========================================
--- 4. 创建第三窗口 (宏伟宝库三线进度面板)
+-- 宏伟宝库三线进度面板
 -- ==========================================
 local function CreateVaultWindow()
   if VaultFrame then return end
@@ -491,7 +510,9 @@ local function ShowCharacterVault(guid)
   VaultFrame:Show()
 end
 
+-- ==========================================
 -- 独立鼠标悬浮渲染货币 Tooltip 函数
+-- ==========================================
 local function ShowCurrencyTooltip(ownerFrame, guid)
   if not guid or not CharactersTrackerDB then return end
   local data = CharactersTrackerDB[guid]
@@ -543,7 +564,7 @@ local function ShowCurrencyTooltip(ownerFrame, guid)
 end
 
 -- ==========================================
--- 5. 一级角色列表主窗与拖拽排序核心
+-- 一级角色列表主窗与拖拽排序核心
 -- ==========================================
 local function RearrangeCharacterButtons()
   if not MainFrame or not CharactersTrackerDB or not CharactersTrackerDB.order then return end
@@ -664,9 +685,9 @@ local function OpenMainWindow()
         btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
         btn.text:SetJustifyH("LEFT")
 
-        btn.ilvlText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        btn.ilvlText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
-        btn.ilvlText:SetJustifyH("RIGHT")
+        btn.equippedLevelText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        btn.equippedLevelText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
+        btn.equippedLevelText:SetJustifyH("RIGHT")
 
         local extraBtn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
         extraBtn:SetSize(32, 30)
@@ -715,10 +736,14 @@ local function OpenMainWindow()
       local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
       btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
 
-      if data.avgIlvl and data.avgIlvl > 0 then
-        btn.ilvlText:SetText(string.format("|cffffd100%.2f|r", data.avgIlvl))
+      if data.equippedLevel and data.equippedLevel > 0 then
+        if data.officialLevel then
+          btn.equippedLevelText:SetText(string.format("|cffffd100%.2f|r", data.equippedLevel))
+        else
+          btn.equippedLevelText:SetText(string.format("|cffffd100%s%.2f|r", SYMBOL_APPROX_EQ, data.equippedLevel))
+        end
       else
-        btn.ilvlText:SetText("|cff888888--|r")
+        btn.equippedLevelText:SetText("|cff888888--|r")
       end
 
       -- ------------------------------------------------------------
@@ -777,7 +802,7 @@ local function OpenMainWindow()
 end
 
 -- ==========================================
--- 6. 独立悬浮触发按钮设计
+-- 独立悬浮触发按钮设计
 -- ==========================================
 local function CreateFloatingButton()
   if FloatingButton then return end
@@ -836,53 +861,7 @@ local function CreateFloatingButton()
 end
 
 -- ==========================================
--- 7. 后台监听自动记录
--- ==========================================
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-eventFrame:RegisterEvent("WEEKLY_REWARDS_UPDATE")
-eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
-eventFrame:RegisterEvent("BANKFRAME_OPENED")        -- 【无损注入】监听银行打开
-eventFrame:RegisterEvent("PLAYERBANKSLOTS_CHANGED") -- 【无损注入】监听银行发生物理变化
-
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
-  if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
-    if not CharactersTrackerDB then CharactersTrackerDB = {} end
-
-    if MainFrame and CharactersTrackerDB["MainFramePosition"] then
-      local pos = CharactersTrackerDB["MainFramePosition"]
-      MainFrame:ClearAllPoints()
-      MainFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
-    end
-    if DetailFrame and CharactersTrackerDB["DetailFramePosition"] then
-      local pos = CharactersTrackerDB["DetailFramePosition"]
-      DetailFrame:ClearAllPoints()
-      DetailFrame:SetPoint(pos.point, UIParent, pos.relativePoint, xOfs, yOfs)
-    end
-    if VaultFrame and CharactersTrackerDB["VaultFramePosition"] then
-      local pos = CharactersTrackerDB["VaultFramePosition"]
-      VaultFrame:ClearAllPoints()
-      VaultFrame:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
-    end
-  elseif event == "BANKFRAME_OPENED" or event == "PLAYERBANKSLOTS_CHANGED" then
-    ScanCharacterBank()
-  elseif event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_EQUIPMENT_CHANGED" or event == "WEEKLY_REWARDS_UPDATE" or event == "CURRENCY_DISPLAY_UPDATE" then
-    if C_WeeklyRewards and C_WeeklyRewards.RequestActivityInfo then
-      pcall(C_WeeklyRewards.RequestActivityInfo)
-    end
-
-    if event == "PLAYER_ENTERING_WORLD" then
-      CreateFloatingButton()
-    end
-
-    C_Timer.After(1.5, function() ScanCurrentCharacter() end)
-  end
-end)
-
--- ==========================================
--- 9. 【全新功能】战团资产汇总与网格检索面板
+-- 战团资产汇总与网格检索面板
 -- ==========================================
 local function GetContainerNameText(bagID)
   if bagID >= 0 and bagID <= 4 then
@@ -891,6 +870,8 @@ local function GetContainerNameText(bagID)
     return L["INV_LOC_REAGENT_BAG"]
   elseif bagID >= 6 and bagID <= 11 then
     return L["INV_LOC_BANK"]
+  elseif bagID >= 12 and bagID <= 16 then
+    return L["INV_LOC_WARBAND_BANK"]
   else
     return L["INV_LOC_OTHERS"]
   end
@@ -921,8 +902,10 @@ local function AggregateWarbandItems()
             end
 
             AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
-
-            local srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
+            local srcKey = L["INV_SRC_WARBAND"]
+            if bagID < 12 then
+              srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
+            end
             local locText = GetContainerNameText(bagID)
             if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
               AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
@@ -1116,6 +1099,62 @@ ToggleInventoryWindow = function()
     InventoryFrame:Show()
   end
 end
+
+-- All jobs: Rewards/Equipped/Currencies/Bags/Banks
+
+-- ==========================================
+-- 7. 后台监听自动记录
+-- ==========================================
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+eventFrame:RegisterEvent("WEEKLY_REWARDS_UPDATE")
+eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+eventFrame:RegisterEvent("BANKFRAME_OPENED")
+eventFrame:RegisterEvent("BANKFRAME_CLOSED")
+eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+
+eventFrame:SetScript("OnEvent", function(self, event, arg1)
+  if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
+    -- ==========================================
+    -- Initial statement
+    -- ==========================================
+    DbCheck()
+    guid = UnitGUID("player")
+    if not guid then return end
+    DP(guid)
+    InitCharacterCache()
+  elseif event == "BANKFRAME_OPENED" then
+    DP(event)
+    isBankOpen = true
+    ScanCharacterBanks()
+  elseif event == "BANKFRAME_CLOSED" then
+    DP(event)
+    isBankOpen = false
+  elseif event == "BAG_UPDATE_DELAYED" then
+    DP(event)
+    ScanCharacterBags()
+    if isBankOpen then
+      ScanCharacterBanks()
+    end
+  elseif event == "WEEKLY_REWARDS_UPDATE" then
+    ScanCharacterRewards()
+  elseif event == "PLAYER_EQUIPMENT_CHANGED" then
+    C_Timer.After(1.5, function() ScanCharacterGears() end)
+  elseif event == "CURRENCY_DISPLAY_UPDATE" then
+    ScanCharacterCurrencies()
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    -- ==========================================
+    -- Try to Triggering weekly rewards notify.
+    -- ==========================================
+    if C_WeeklyRewards and C_WeeklyRewards.RequestActivityInfo then
+      pcall(C_WeeklyRewards.RequestActivityInfo)
+    end
+    C_Timer.After(1.5, function() ScanCharacterGears() end)
+    CreateFloatingButton()
+  end
+end)
 
 -- ==========================================
 -- 8. 命令注册
