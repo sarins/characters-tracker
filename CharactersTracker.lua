@@ -41,6 +41,7 @@ local TRACKED_CURRENCIES = {
 
 local BAG_SLOTS = { 0, 1, 2, 3, 4, 5 }
 local BANK_SLOTS = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+local WARBAND_BANK_SLOT_IDX = 12
 
 local MainFrame, DetailFrame, VaultFrame, FloatingButton, InventoryFrame
 local AGGREGATED_ITEMS = {} -- 全局聚合清洗后的检索池
@@ -73,6 +74,7 @@ local function InitCharacterCache()
   CharactersTrackerDB[guid].gear = CharactersTrackerDB[guid].gear or {}
   CharactersTrackerDB[guid].vault = CharactersTrackerDB[guid].vault or {}
   CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
+  CharactersTrackerDB.bags = CharactersTrackerDB.bags or {}
   CharactersTrackerDB[guid].currencies = {}
 end
 
@@ -255,7 +257,11 @@ local function ScanBankSlots(bank)
         bankSlots[s] = ConvertBagInfo(info)
       end
     end
-    CharactersTrackerDB[guid].bags[bank] = bankSlots
+    if bank < WARBAND_BANK_SLOT_IDX then
+      CharactersTrackerDB[guid].bags[bank] = bankSlots
+    else
+      CharactersTrackerDB.bags[bank] = bankSlots
+    end
   end
   DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
 end
@@ -881,6 +887,7 @@ local function AggregateWarbandItems()
   table.wipe(AGGREGATED_ITEMS)
   if not CharactersTrackerDB then return end
 
+  -- characters data
   for guid, charData in pairs(CharactersTrackerDB) do
     if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
       local charNameWithRealm = string.format("%s-%s", charData.name, charData.realm or GetRealmName())
@@ -902,10 +909,7 @@ local function AggregateWarbandItems()
             end
 
             AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
-            local srcKey = L["INV_SRC_WARBAND"]
-            if bagID < 12 then
-              srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
-            end
+            local srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
             local locText = GetContainerNameText(bagID)
             if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
               AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
@@ -914,6 +918,33 @@ local function AggregateWarbandItems()
                 item.count
           end
         end
+      end
+    end
+  end
+  -- warband data
+  for bagID, bagData in pairs(CharactersTrackerDB.bags) do
+    for slotID, item in pairs(bagData) do
+      if item and item.id then
+        if not AGGREGATED_ITEMS[item.id] then
+          AGGREGATED_ITEMS[item.id] = {
+            id = item.id,
+            name = item.link and (GetItemInfo(item.link) or item.link:match("%[(.-)%]")) or L["INV_LOADING"],
+            icon = item.icon or 134400,
+            quality = item.quality or 1,
+            link = item.link,
+            totalCount = 0,
+            sources = {}
+          }
+        end
+
+        AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
+        local srcKey = L["INV_SRC_WARBAND"]
+        local locText = GetContainerNameText(bagID)
+        if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
+          AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
+        end
+        AGGREGATED_ITEMS[item.id].sources[srcKey][locText] = (AGGREGATED_ITEMS[item.id].sources[srcKey][locText] or 0) +
+            item.count
       end
     end
   end
@@ -1100,10 +1131,21 @@ ToggleInventoryWindow = function()
   end
 end
 
--- All jobs: Rewards/Equipped/Currencies/Bags/Banks
+local function ClearOldWarbandBankData()
+  for guid, charData in pairs(CharactersTrackerDB) do
+    if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
+      for bagID, _ in pairs(charData.bags) do
+        if bagID >= WARBAND_BANK_SLOT_IDX then
+          CharactersTrackerDB[guid].bags[bagID] = nil
+        end
+      end
+    end
+  end
+end
 
+-- All jobs: Rewards/Equipped/Currencies/Bags/Banks
 -- ==========================================
--- 7. 后台监听自动记录
+-- 后台监听自动记录
 -- ==========================================
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
@@ -1125,6 +1167,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if not guid then return end
     DP(guid)
     InitCharacterCache()
+    ClearOldWarbandBankData()
   elseif event == "BANKFRAME_OPENED" then
     DP(event)
     isBankOpen = true
@@ -1139,7 +1182,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
       ScanCharacterBanks()
     end
   elseif event == "WEEKLY_REWARDS_UPDATE" then
-    ScanCharacterRewards()
+    C_Timer.After(1.5, function() ScanCharacterRewards() end)
   elseif event == "PLAYER_EQUIPMENT_CHANGED" then
     C_Timer.After(1.5, function() ScanCharacterGears() end)
   elseif event == "CURRENCY_DISPLAY_UPDATE" then
@@ -1151,7 +1194,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     if C_WeeklyRewards and C_WeeklyRewards.RequestActivityInfo then
       pcall(C_WeeklyRewards.RequestActivityInfo)
     end
-    C_Timer.After(1.5, function() ScanCharacterGears() end)
+    C_Timer.After(1.5, function()
+      ScanCharacterGears()
+      ScanCharacterRewards()
+    end)
     CreateFloatingButton()
   end
 end)
