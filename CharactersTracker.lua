@@ -1,9 +1,15 @@
 -- ====================================================================
 -- CharactersTracker, All Rights Reserved unless otherwise explicitly stated.
 -- ====================================================================
-local L = CharactersTracker_Locale
+local addonName, addon = ...
 
+local L = CharactersTracker_Locale
+local DB_DATA_VERSION = "DB_VERSION"
+local DATA_VERSION = "1.2.0"
+-- local gui = CharactersTracker_GUI
+-- ax:X()
 -- code "\226\137\136" represent ≈ symbol
+
 local SYMBOL_APPROX_EQ = "\226\137\136"
 local SCAN_SLOTS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19 }
 
@@ -55,34 +61,96 @@ local ToggleInventoryWindow
 local isBankOpen = false
 local guid
 
-local DEBUG = false
+local DEBUG = true
 local function DP(...)
   if DEBUG then
     print(...)
   end
 end
 
+-- local frame = CreateFrame("Frame")
+-- frame:RegisterEvent("TIME_PLAYED_MSG")
+-- frame:SetScript("OnEvent", function(self, event, totalTime, levelTime)
+--     -- totalTime: 总游戏时间（秒）
+--     -- levelTime: 当前等级消耗的时间（秒）
+--     print(string.format("总时长: %.2f 小时", totalTime / 3600))
+--     print(string.format("当前等级时长: %.2f 小时", levelTime / 3600))
+
+--     self:UnregisterEvent("TIME_PLAYED_MSG") -- 拿到后注销，避免频繁触发
+-- end)
+
+-- -- 主动向服务器发起查询请求
+-- RequestTimePlayed()
+
 local function DbCheck()
-  if not CharactersTrackerDB then CharactersTrackerDB = {} end
+  if not CharactersTrackerDB then
+    CharactersTrackerDB = {
+      CHARACTERS = {},
+      WARBAND = {
+        BAGS = {},
+      },
+      SETTINGS = {
+        POSITIONS = {},
+        CHARACTERS_ORDER = {},
+        CLP = {
+          HIDDEN_COLUMNS = {},
+          HIDDEN_CHARACTERS = {},
+        },
+      },
+    }
+    CharactersTrackerDB[DB_DATA_VERSION] = DATA_VERSION
+  end
 end
 
 local function InitCharacterCache()
-  if not CharactersTrackerDB[guid] then CharactersTrackerDB[guid] = {} end
-  CharactersTrackerDB[guid].name = UnitName("player")
-  CharactersTrackerDB[guid].realm = GetRealmName()
-  CharactersTrackerDB[guid].class = select(2, UnitClass("player"))
-  CharactersTrackerDB[guid].gear = CharactersTrackerDB[guid].gear or {}
-  CharactersTrackerDB[guid].vault = CharactersTrackerDB[guid].vault or {}
-  CharactersTrackerDB[guid].bags = CharactersTrackerDB[guid].bags or {}
-  CharactersTrackerDB.bags = CharactersTrackerDB.bags or {}
-  CharactersTrackerDB[guid].currencies = {}
+  local character = CharactersTrackerDB.CHARACTERS[guid] or {}
+
+  character.name = UnitName("player")
+  character.class = select(2, UnitClass("player"))
+  character.realm = GetRealmName()
+  character.level = UnitLevel("player")
+  character.faction = select(2, UnitFactionGroup("player"))
+  character.zone = GetZoneText() or character.zone or ""
+  character.subZone = GetSubZoneText() or character.subZone or ""
+  character.mScore = C_ChallengeMode.GetOverallDungeonScore() or character.mScore or 0
+  character.played = character.played or 0
+  character.levelPlayed = character.levelPlayed or 0
+  character.gold = GetMoney() or character.gold or 0
+  character.gear = character.gear or {}
+  character.vault = character.vault or {}
+  character.bags = character.bags or {}
+  character.currencies = {}
+  character.updated = time()
+  CharactersTrackerDB.CHARACTERS[guid] = character
 end
 
+local function sync(f)
+  local character = CharactersTrackerDB.CHARACTERS[guid] or {}
+  if "function" == type(f) then
+    f(character)
+  end
+  character.updated = time()
+  CharactersTrackerDB.CHARACTERS[guid] = character
+end
+
+-- local function syncLogout()
+--   local character = CharactersTrackerDB.CHARACTERS[guid] or {}
+--   character.level = UnitLevel("player")
+--   character.faction = select(2, UnitFactionGroup("player"))
+--   character.zone = GetZoneText() or character.zone or ""
+--   character.subZone = GetSubZoneText() or character.subZone or ""
+--   character.mScore = C_ChallengeMode.GetOverallDungeonScore() or character.mScore or 0
+--   character.gold = GetMoney() or character.gold or 0
+--   character.updated = time()
+--   CharactersTrackerDB.CHARACTERS[guid] = character
+-- end
+
 local function ScanCharacterCurrencies()
+  local character = CharactersTrackerDB.CHARACTERS[guid]
   for _, currencyID in ipairs(TRACKED_CURRENCIES) do
     local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
     if info and not info.isAccountWide then
-      CharactersTrackerDB[guid].currencies[currencyID] = {
+      character.currencies[currencyID] = {
         name = info.name,
         quantity = info.quantity,
         icon = info.iconFileID,
@@ -98,6 +166,7 @@ end
 local function ScanCharacterGears()
   -- Try to get official equipped item level
   local _, officialEquippedLevel = GetAverageItemLevel()
+  local character = CharactersTrackerDB.CHARACTERS[guid]
 
   local sumLevel = 0
   local gearCount = 0
@@ -109,7 +178,7 @@ local function ScanCharacterGears()
       local _, enchantId = string.split(":", itemLink)
       local hasEnchant = (enchantId and enchantId ~= "" and enchantId ~= "0") and true or false
 
-      CharactersTrackerDB[guid].gear[slotId] = {
+      character.gear[slotId] = {
         link = itemLink,
         level = itemLevel,
         enchant = hasEnchant
@@ -120,25 +189,26 @@ local function ScanCharacterGears()
         gearCount = gearCount + 1
       end
     else
-      CharactersTrackerDB[guid].gear[slotId] = {}
+      character.gear[slotId] = {}
     end
   end
   -- save avg level of items
   if officialEquippedLevel and officialEquippedLevel > 0 then
-    CharactersTrackerDB[guid].equippedLevel = officialEquippedLevel
-    CharactersTrackerDB[guid].officialLevel = true
+    character.equippedLevel = officialEquippedLevel
+    character.officialLevel = true
   else
     if gearCount > 0 then
-      CharactersTrackerDB[guid].equippedLevel = tonumber(string.format("%.2f", sumLevel / gearCount)) or 0
+      character.equippedLevel = tonumber(string.format("%.2f", sumLevel / gearCount)) or 0
     else
-      CharactersTrackerDB[guid].equippedLevel = 0
+      character.equippedLevel = 0
     end
-    CharactersTrackerDB[guid].officialLevel = false
+    character.officialLevel = false
   end
 end
 
 local function ScanCharacterRewards()
   if C_WeeklyRewards and C_WeeklyRewards.GetActivities then
+    local character = CharactersTrackerDB.CHARACTERS[guid]
     for _, vType in ipairs(VAULT_TYPES) do
       local ok, activities = pcall(C_WeeklyRewards.GetActivities, vType.id)
 
@@ -157,7 +227,7 @@ local function ScanCharacterRewards()
       end
 
       if activities then
-        CharactersTrackerDB[guid].vault[vType.id] = {}
+        character.vault[vType.id] = {}
         for _, activityInfo in ipairs(activities) do
           if activityInfo and activityInfo.index then
             local isValid = true
@@ -195,7 +265,7 @@ local function ScanCharacterRewards()
             end
             -- 只有真正通过了当前大版本/当前赛季校验的数据，才允许记入本地数据库
             if isValid then
-              table.insert(CharactersTrackerDB[guid].vault[vType.id], {
+              table.insert(character.vault[vType.id], {
                 index = activityInfo.index,
                 progress = activityInfo.progress or 0,
                 threshold = activityInfo.threshold or 0,
@@ -204,7 +274,7 @@ local function ScanCharacterRewards()
             end
           end
         end
-        table.sort(CharactersTrackerDB[guid].vault[vType.id], function(a, b) return (a.index or 0) < (b.index or 0) end)
+        table.sort(character.vault[vType.id], function(a, b) return (a.index or 0) < (b.index or 0) end)
       end
     end
   end
@@ -221,27 +291,40 @@ local function ConvertBagInfo(info)
   }
 end
 
+local function isLockingFor(k, s)
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+  local now = time()
+  if (now - (character[k] or 0)) < s then
+    return true
+  end
+  character[k] = now
+  return false
+end
+
 local function ScanBagSlots(bag)
   local numSlots = C_Container.GetContainerNumSlots(bag) or 0
+  local character = CharactersTrackerDB.CHARACTERS[guid]
   if numSlots > 0 then
-    CharactersTrackerDB[guid].bags[bag] = {}
+    character.bags[bag] = {}
     for s = 1, numSlots do
       local info = C_Container.GetContainerItemInfo(bag, s)
       if info and info.itemID then
-        CharactersTrackerDB[guid].bags[bag][s] = ConvertBagInfo(info)
+        character.bags[bag][s] = ConvertBagInfo(info)
       end
     end
   end
-  DP("P: " .. guid .. ", bag: " .. bag .. " has been scan.")
+  -- DP("P: " .. guid .. ", bag: " .. bag .. " has been scan.")
 end
 
 local function ScanCharacterBags()
+  if isLockingFor("lastTimeUpdateBag", 30) then return end
   for _, b in pairs(BAG_SLOTS) do
     ScanBagSlots(b)
   end
 end
 
 local function ScanBankSlots(bank)
+  local character = CharactersTrackerDB.CHARACTERS[guid]
   if not isBankOpen then
     return
   end
@@ -258,12 +341,12 @@ local function ScanBankSlots(bank)
       end
     end
     if bank < WARBAND_BANK_SLOT_IDX then
-      CharactersTrackerDB[guid].bags[bank] = bankSlots
+      character.bags[bank] = bankSlots
     else
-      CharactersTrackerDB.bags[bank] = bankSlots
+      CharactersTrackerDB.WARBAND.BAGS[bank] = bankSlots
     end
   end
-  DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
+  -- DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
 end
 
 local function ScanCharacterBanks()
@@ -285,9 +368,9 @@ local function CreateBaseWindow(name, width, height, titleText, dbKey)
   f:SetScript("OnDragStart", f.StartMoving)
   f:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
-    if dbKey and CharactersTrackerDB then
+    if dbKey then
       local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-      CharactersTrackerDB[dbKey] = {
+      CharactersTrackerDB.SETTINGS.POSITIONS[dbKey] = {
         point = point,
         relativePoint = relativePoint,
         xOfs = xOfs,
@@ -314,8 +397,8 @@ local function CreateBaseWindow(name, width, height, titleText, dbKey)
   f.closeBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -2)
   f.closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-  if dbKey and CharactersTrackerDB and CharactersTrackerDB[dbKey] then
-    local pos = CharactersTrackerDB[dbKey]
+  if dbKey and CharactersTrackerDB.SETTINGS.POSITIONS[dbKey] then
+    local pos = CharactersTrackerDB.SETTINGS.POSITIONS[dbKey]
     f:ClearAllPoints()
     f:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
   else
@@ -382,7 +465,7 @@ end
 
 local function ShowCharacterDetail(guid)
   CreateDetailWindow()
-  local data = CharactersTrackerDB[guid]
+  local data = CharactersTrackerDB.CHARACTERS[guid]
   if not data or not data.name then return end
 
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
@@ -481,7 +564,7 @@ end
 
 local function ShowCharacterVault(guid)
   CreateVaultWindow()
-  local data = CharactersTrackerDB[guid]
+  local data = CharactersTrackerDB.CHARACTERS[guid]
   if not data or not data.name then return end
 
   local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
@@ -519,9 +602,9 @@ end
 -- ==========================================
 -- 独立鼠标悬浮渲染货币 Tooltip 函数
 -- ==========================================
-local function ShowCurrencyTooltip(ownerFrame, guid)
-  if not guid or not CharactersTrackerDB then return end
-  local data = CharactersTrackerDB[guid]
+local function ShowCurrencyTooltip(ownerFrame, uid)
+  if not uid then return end
+  local data = CharactersTrackerDB.CHARACTERS[uid]
   if not data or not data.name then return end
 
   GameTooltip:SetOwner(ownerFrame, "ANCHOR_RIGHT")
@@ -573,11 +656,13 @@ end
 -- 一级角色列表主窗与拖拽排序核心
 -- ==========================================
 local function RearrangeCharacterButtons()
-  if not MainFrame or not CharactersTrackerDB or not CharactersTrackerDB.order then return end
+  if not MainFrame then return end
+
+  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
 
   local index = 0
-  for _, guid in ipairs(CharactersTrackerDB.order) do
-    local btn = MainFrame.guidToButton[guid]
+  for _, id in ipairs(orderKeeper) do
+    local btn = MainFrame.guidToButton[id]
     if btn and btn:IsShown() then
       index = index + 1
       btn:ClearAllPoints()
@@ -595,6 +680,7 @@ end
 
 local function OnCharacterButtonUpdate(self)
   if not self.isDragging then return end
+  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
 
   local _, relativeTo, _, _, yOfs = self:GetPoint()
   local currentFrameY = self:GetTop()
@@ -603,19 +689,19 @@ local function OnCharacterButtonUpdate(self)
 
   local relativeY = parentTop - currentFrameY
   local targetIndex = math.floor((relativeY + 17) / 34) + 1
-  targetIndex = math.max(1, math.min(targetIndex, #CharactersTrackerDB.order))
+  targetIndex = math.max(1, math.min(targetIndex, #orderKeeper))
 
   local oldIndex = 0
-  for idx, guid in ipairs(CharactersTrackerDB.order) do
-    if guid == self.guid then
+  for idx, id in ipairs(orderKeeper) do
+    if id == self.guid then
       oldIndex = idx
       break
     end
   end
 
   if oldIndex > 0 and oldIndex ~= targetIndex then
-    table.remove(CharactersTrackerDB.order, oldIndex)
-    table.insert(CharactersTrackerDB.order, targetIndex, self.guid)
+    table.remove(orderKeeper, oldIndex)
+    table.insert(orderKeeper, targetIndex, self.guid)
     RearrangeCharacterButtons()
   end
 end
@@ -640,38 +726,37 @@ local function OpenMainWindow()
   end
   table.wipe(MainFrame.guidToButton)
 
-  if not CharactersTrackerDB then CharactersTrackerDB = {} end
-  if not CharactersTrackerDB.order then CharactersTrackerDB.order = {} end
-
   local activeGuids = {}
-  for guid, data in pairs(CharactersTrackerDB) do
-    if type(data) == "table" and data.name and guid ~= "order" then
+  for guid, data in pairs(CharactersTrackerDB.CHARACTERS) do
+    if data.name then
       activeGuids[guid] = true
     end
   end
 
-  for i = #CharactersTrackerDB.order, 1, -1 do
-    if not activeGuids[CharactersTrackerDB.order[i]] then
-      table.remove(CharactersTrackerDB.order, i)
+  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
+
+  for i = #orderKeeper, 1, -1 do
+    if not activeGuids[orderKeeper[i]] then
+      table.remove(orderKeeper, i)
     end
   end
 
   for guid in pairs(activeGuids) do
     local exists = false
-    for _, orderedGuid in ipairs(CharactersTrackerDB.order) do
+    for _, orderedGuid in ipairs(orderKeeper) do
       if orderedGuid == guid then
         exists = true
         break
       end
     end
     if not exists then
-      table.insert(CharactersTrackerDB.order, guid)
+      table.insert(orderKeeper, guid)
     end
   end
 
   local index = 0
-  for _, guid in ipairs(CharactersTrackerDB.order) do
-    local data = CharactersTrackerDB[guid]
+  for _, guid in ipairs(orderKeeper) do
+    local data = CharactersTrackerDB.CHARACTERS[guid]
     if data and data.name then
       index = index + 1
       local btn = MainFrame.buttons[index]
@@ -831,7 +916,7 @@ local function CreateFloatingButton()
     self:StopMovingOrSizing()
     if CharactersTrackerDB then
       local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-      CharactersTrackerDB["FloatingButtonPosition"] = {
+      CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"] = {
         point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs
       }
     end
@@ -857,8 +942,8 @@ local function CreateFloatingButton()
   end)
   FloatingButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-  if CharactersTrackerDB and CharactersTrackerDB["FloatingButtonPosition"] then
-    local pos = CharactersTrackerDB["FloatingButtonPosition"]
+  if CharactersTrackerDB and CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"] then
+    local pos = CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"]
     FloatingButton:ClearAllPoints()
     FloatingButton:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
   else
@@ -888,8 +973,8 @@ local function AggregateWarbandItems()
   if not CharactersTrackerDB then return end
 
   -- characters data
-  for guid, charData in pairs(CharactersTrackerDB) do
-    if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
+  for _, charData in pairs(CharactersTrackerDB.CHARACTERS) do
+    if type(charData) == "table" and charData.name and charData.bags then
       local charNameWithRealm = string.format("%s-%s", charData.name, charData.realm or GetRealmName())
       local classColor = RAID_CLASS_COLORS[charData.class] and RAID_CLASS_COLORS[charData.class].colorStr or "ffffffff"
 
@@ -922,7 +1007,7 @@ local function AggregateWarbandItems()
     end
   end
   -- warband data
-  for bagID, bagData in pairs(CharactersTrackerDB.bags) do
+  for bagID, bagData in pairs(CharactersTrackerDB.WARBAND.BAGS) do
     for slotID, item in pairs(bagData) do
       if item and item.id then
         if not AGGREGATED_ITEMS[item.id] then
@@ -1131,16 +1216,72 @@ ToggleInventoryWindow = function()
   end
 end
 
-local function ClearOldWarbandBankData()
-  for guid, charData in pairs(CharactersTrackerDB) do
-    if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
-      for bagID, _ in pairs(charData.bags) do
-        if bagID >= WARBAND_BANK_SLOT_IDX then
-          CharactersTrackerDB[guid].bags[bagID] = nil
-        end
-      end
+-- local function ClearOldWarbandBankData()
+--   for guid, charData in pairs(CharactersTrackerDB) do
+--     if type(charData) == "table" and charData.name and guid ~= "order" and charData.bags then
+--       for bagID, _ in pairs(charData.bags) do
+--         if bagID >= WARBAND_BANK_SLOT_IDX then
+--           CharactersTrackerDB[guid].bags[bagID] = nil
+--         end
+--       end
+--     end
+--   end
+-- end
+
+
+local function StringStartWith(str, prefix)
+  return string.find(str, prefix, 1, true) == 1
+end
+
+local function StringEndWith(str, suffix)
+  if suffix == "" then return true end
+  return string.sub(str, -string.len(suffix)) == suffix
+end
+
+local function DataMigrationBeforeV1_2_0()
+  -- local currentVersion = C_AddOns.GetAddOnMetadata(addonName, "Version") or ""
+  local dataVersion = CharactersTrackerDB[DB_DATA_VERSION] or ""
+  if dataVersion >= DATA_VERSION or "table" ~= type(CharactersTrackerDB) or next(CharactersTrackerDB) == nil then
+    DP("migration skip because data no need to migrate")
+    return
+  end
+  -- if currentVersion < "1.1.2" then
+  --   -- ClearOldWarbandBankData()
+  --   return
+  -- end
+  DP("start data migration...")
+  -- CharactersTrackerDB.version
+  local migratedDb = {
+    CHARACTERS = {},
+    WARBAND = {
+      BAGS = {},
+    },
+    -- positions = {},
+    SETTINGS = {
+      POSITIONS = {},
+      CHARACTERS_ORDER = {},
+      CLP = {
+        HIDDEN_COLUMNS = {},
+        HIDDEN_CHARACTERS = {},
+      },
+    },
+  }
+  for k, d in pairs(CharactersTrackerDB) do
+    if StringStartWith(k, "Player-") then
+      migratedDb.CHARACTERS[k] = d
+    elseif StringEndWith(k, "Position") then
+      migratedDb.SETTINGS.POSITIONS[k] = d
+    elseif "bags" == k then
+      migratedDb.WARBAND.BAGS = d or {}
+    elseif "order" == k then
+      migratedDb.SETTINGS.CHARACTERS_ORDER = d or {}
+    else
+      -- nothing
+      DP(k)
     end
   end
+  migratedDb[DB_DATA_VERSION] = DATA_VERSION
+  CharactersTrackerDB = migratedDb
 end
 
 -- All jobs: Rewards/Equipped/Currencies/Bags/Banks
@@ -1156,8 +1297,15 @@ eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 eventFrame:RegisterEvent("BANKFRAME_OPENED")
 eventFrame:RegisterEvent("BANKFRAME_CLOSED")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+-- add below when 1.2.0
+eventFrame:RegisterEvent("PLAYER_LOGOUT")
+eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+eventFrame:RegisterEvent("TIME_PLAYED_MSG")
+-- eventFrame:RegisterEvent("ZONE_CHANGED")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+eventFrame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
 
-eventFrame:SetScript("OnEvent", function(self, event, arg1)
+eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
   if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
     -- ==========================================
     -- Initial statement
@@ -1166,17 +1314,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     guid = UnitGUID("player")
     if not guid then return end
     DP(guid)
+    DataMigrationBeforeV1_2_0()
     InitCharacterCache()
-    ClearOldWarbandBankData()
+    -- ClearOldWarbandBankData()
+    addon:InitWorkspace()
   elseif event == "BANKFRAME_OPENED" then
-    DP(event)
+    -- DP(event)
     isBankOpen = true
     ScanCharacterBanks()
   elseif event == "BANKFRAME_CLOSED" then
-    DP(event)
+    -- DP(event)
     isBankOpen = false
   elseif event == "BAG_UPDATE_DELAYED" then
-    DP(event)
+    -- DP(event)
     ScanCharacterBags()
     if isBankOpen then
       ScanCharacterBanks()
@@ -1187,6 +1337,41 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
     C_Timer.After(1.5, function() ScanCharacterGears() end)
   elseif event == "CURRENCY_DISPLAY_UPDATE" then
     ScanCharacterCurrencies()
+  elseif event == "CHALLENGE_MODE_MAPS_UPDATE" then
+    sync(
+      function(c)
+        c.mScore = C_ChallengeMode.GetOverallDungeonScore() or c.mScore or 0
+      end
+    )
+  elseif event == "ZONE_CHANGED_NEW_AREA" then
+    sync(
+      function(c)
+        c.zone = GetZoneText() or c.zone or ""
+        c.subZone = GetSubZoneText() or c.subZone or ""
+      end
+    )
+  elseif event == "TIME_PLAYED_MSG" then
+    sync(
+      function(c)
+        c.played = arg1 or c.played or 0
+        c.levelPlayed = arg2 or c.levelPlayed or 0
+      end
+    )
+  elseif event == "PLAYER_LEVEL_UP" then
+    DP(event)
+    C_Timer.After(
+      2,
+      function()
+        sync(
+          function(c)
+            c.level = UnitLevel("player")
+          end
+        )
+      end
+    )
+  elseif event == "PLAYER_LOGOUT" then
+    DP(event)
+    -- TODO
   elseif event == "PLAYER_ENTERING_WORLD" then
     -- ==========================================
     -- Try to Triggering weekly rewards notify.
@@ -1203,13 +1388,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1)
 end)
 
 -- ==========================================
--- 8. 命令注册
+-- 命令注册
 -- ==========================================
 SLASH_WBCT1 = "/wbct"
 SLASH_WBCT2 = "/ct"
 SlashCmdList["WBCT"] = function(msg)
   if msg == "bag" or msg == "inv" then
     ToggleInventoryWindow()
+  elseif "debug" == msg then
+    addon:ClpMain()
+  elseif "x" == msg then
+    addon:CgpMain()
   else
     if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
   end

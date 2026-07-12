@@ -14,7 +14,7 @@ local L = setmetatable({}, {
 
 -- 注册全局或 addon 内部局部变量（这里我们直接绑定到 L 方便调用）
 CharactersTracker_Locale = L
-
+L["CT_TITLE"] = "Characters Tracker"
 L["FB_FUNC"] = "Warband Characters Tracker"
 L["FB_L1"] = "Hold Left-Click: Drag to reposition button"
 L["FB_L2"] = "Left-Click: Toggle Warband Character List"
@@ -43,11 +43,36 @@ L["INV_LOC_REAGENT_BAG"] = "Reagent Bag"
 L["INV_LOC_BANK"] = "Bank"
 L["INV_LOC_WARBAND_BANK"] = "Warband Bank"
 L["INV_LOC_OTHERS"] = "Others"
+-- CLP Labels
+L["CLP_LABEL_VISIBLE"] = "Visible"
+L["CLP_LABEL_NAME"] = "Name"
+L["CLP_LABEL_CLASS"] = "Class"
+L["CLP_LABEL_REALM"] = "Realm"
+L["CLP_LABEL_LEVEL"] = "Level"
+L["CLP_LABEL_FACTION"] = "Faction"
+L["CLP_LABEL_ZONE"] = "Zone"
+L["CLP_LABEL_SUBZONE"] = "Sub Zone"
+L["CLP_LABEL_ITEM_LEVEL"] = "Item Level"
+L["CLP_LABEL_RV"] = "Raids Vault"
+L["CLP_LABEL_DV"] = "Dungeons Vault"
+L["CLP_LABEL_WV"] = "World Vault"
+L["CLP_LABEL_M_SCORE"] = "M+ Score"
+L["CLP_LABEL_PLAYED"] = "Played"
+L["CLP_LABEL_GOLD"] = "Gold"
+L["CLP_LABEL_CURRENCIES"] = "Currencies"
+L["CLP_LABEL_PVP"] = "PvP"
+L["CLP_LABEL_UPDATED"] = "Updated"
+L["CLP_LABEL_OPERATION"] = "Operation"
+-- Confirm dialog
+L["CT_CONFIRM_REMOVE_CHARACTER_DATA"] = "Delete all cached data for %s?\nThis data will be permanently lost."
+L["CT_CONFIRM_Y"] = "Confirm"
+L["CT_CONFIRM_N"] = "Cancel"
 
 -- ====================================================================
 -- 简体中文环境 (zhCN)
 -- ====================================================================
 if currentLocale == "zhCN" then
+  L["CT_TITLE"] = "角色追踪"
   L["FB_FUNC"] = "战团角色追踪"
   L["FB_L1"] = "按住左键拖动: 自由调整按钮位置"
   L["FB_L2"] = "左键点击: 打开/关闭战团角色列表"
@@ -76,4 +101,28 @@ if currentLocale == "zhCN" then
   L["INV_LOC_BANK"] = "银行"
   L["INV_LOC_WARBAND_BANK"] = "战团银行"
   L["INV_LOC_OTHERS"] = "其他"
+  -- CLP Labels
+  L["CLP_LABEL_VISIBLE"] = "是否可见"
+  L["CLP_LABEL_NAME"] = "名称"
+  L["CLP_LABEL_CLASS"] = "职业"
+  L["CLP_LABEL_REALM"] = "服务器"
+  L["CLP_LABEL_LEVEL"] = "等级"
+  L["CLP_LABEL_FACTION"] = "阵营"
+  L["CLP_LABEL_ZONE"] = "地区"
+  L["CLP_LABEL_SUBZONE"] = "区域"
+  L["CLP_LABEL_ITEM_LEVEL"] = "装备等级"
+  L["CLP_LABEL_RV"] = "团队副本"
+  L["CLP_LABEL_DV"] = "地下城"
+  L["CLP_LABEL_WV"] = "地下堡/世界"
+  L["CLP_LABEL_M_SCORE"] = "大秘境分数"
+  L["CLP_LABEL_PLAYED"] = "游戏时长"
+  L["CLP_LABEL_GOLD"] = "金币"
+  L["CLP_LABEL_CURRENCIES"] = "货币"
+  L["CLP_LABEL_PVP"] = "PvP"
+  L["CLP_LABEL_UPDATED"] = "更新时间"
+  L["CLP_LABEL_OPERATION"] = "操作"
+  -- Confirm dialog
+  L["CT_CONFIRM_REMOVE_CHARACTER_DATA"] = "确定要清除角色 %s 的所有缓存数据吗？\n该操作执行后该角色的数据将无法恢复。"
+  L["CT_CONFIRM_Y"] = "确定"
+  L["CT_CONFIRM_N"] = "取消"
 end
