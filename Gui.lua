@@ -26,6 +26,9 @@ local L = CharactersTracker_Locale
 
 local MAX_LEVEL_OF_CHARACTER = GetMaxLevelForPlayerExpansion()
 
+local BASIC_STATS_LAYOUT = { "STRENGTH", "AGILITY", "INTELLECT", "STAMINA", "ARMOR" }
+local SECONDARY_STATS_LAYOUT = { "CRITICAL_STRIKE", "HASTE", "MASTERY", "VERSATILITY", "LIFESTEAL", "SPEED", "AVOIDANCE" }
+
 local GEAR_SLOTS_LAYOUT = {
   [1] = { 1, 2, 3, 15, 5, 4, 19, 9 },   -- 第1列：头、颈、肩、背、胸、衬衣、战袍、腕
   [2] = { 16 },                         -- 第2列：主手
@@ -45,7 +48,7 @@ StaticPopupDialogs["CONFIRM_PURE_CHARACTER_DATA"] = {
 }
 
 -- SecondsToTimeAbbrev
-local S2TA = function(c, f)
+local function S2TA(c, f)
   if c and c[f] and "number" == type(c[f]) then
     local delta = time() - c[f]
     if (delta < 60) then
@@ -69,6 +72,13 @@ local FORMATTERS = {
       local cc = RAID_CLASS_COLORS[c.class] and RAID_CLASS_COLORS[c.class].colorStr or "ffffffff"
       local cn = LOCALIZED_CLASS_NAMES_MALE[c.class]
       return string.format("|c%s%s|r", cc, cn or c.class)
+    end
+    return ""
+  end,
+  CLASS_COLOR = function(c, s)
+    if c and c.class then
+      local cc = RAID_CLASS_COLORS[c.class] and RAID_CLASS_COLORS[c.class].colorStr or "ffffffff"
+      return string.format("|c%s%s|r", cc, s)
     end
     return ""
   end,
@@ -292,7 +302,7 @@ local CT_THEME = {
     },
     DETAIL = {
       HEADLINE = {
-        HEIGHT = 48,
+        HEIGHT = 40,
         FONT = "BIG",
       },
       BAR      = {
@@ -321,6 +331,21 @@ local CT_THEME = {
         PADDING = 4,
       },
     },
+    SLOT   = {
+      ICON = {
+        COLOR = { 0, 0, 0 },
+      },
+      QUALITY = {
+        SIZE = { 8, 8 },
+        COLOR = { 1, 1, 1 },
+        POINT = { 0, 0 },
+      },
+      ITEM_LEVEL = {
+        FONT = "MINI",
+        PADDING = 2,
+        COLOR = { 1, 1, 1 },
+      }
+    }
   },
   CGP2 = {},
 }
@@ -1004,32 +1029,31 @@ function addon:CpgDetailHeadline(name, parent)
   return container
 end
 
-function addon:CpgDetailBar(name, parent, title)
+function addon:CpgDetailBar(name, parent)
   local bar = CreateFrame("Frame", name, parent)
   bar:SetWidth(parent:GetWidth())
   bar:SetHeight(CT_THEME.CGP.DETAIL.BAR.HEIGHT)
   bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 
-  local bg = bar:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.BG.COLOR))
+  bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+  bar.bg:SetAllPoints()
+  bar.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.BG.COLOR))
 
-  local line = bar:CreateTexture(nil, "OVERLAY")
-  line:SetHeight(CT_THEME.CGP.DETAIL.BAR.LINE.HEIGHT)
-  line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-  line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-  line:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.LINE.COLOR))
+  bar.line = bar:CreateTexture(nil, "OVERLAY")
+  bar.line:SetHeight(CT_THEME.CGP.DETAIL.BAR.LINE.HEIGHT)
+  bar.line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+  bar.line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+  bar.line:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.LINE.COLOR))
 
-  local t = bar:CreateFontString(nil, "OVERLAY")
-  t:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.BAR.TITLE.FONT])
-  t:SetPoint("CENTER")
-  t:SetTextColor(unpack(CT_THEME.CGP.DETAIL.BAR.TITLE.COLOR))
-  t:SetText(title)
+  bar.text = bar:CreateFontString(nil, "OVERLAY")
+  bar.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.BAR.TITLE.FONT])
+  bar.text:SetPoint("CENTER")
+  bar.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.BAR.TITLE.COLOR))
 
   return bar
 end
 
-function addon:CpgDetailProperty(name, parent, text, value, odd)
+function addon:CpgDetailProperty(name, parent)
   local prop = CreateFrame("Frame", name, parent)
   prop:SetWidth(parent:GetWidth())
   prop:SetHeight(CT_THEME.CGP.DETAIL.PROP.HEIGHT)
@@ -1037,37 +1061,34 @@ function addon:CpgDetailProperty(name, parent, text, value, odd)
 
   prop.bg = prop:CreateTexture(nil, "BACKGROUND")
   prop.bg:SetAllPoints()
-  if odd then
-    prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
-  else
-    prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
-  end
+  -- if odd then
+  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+  -- else
+  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+  -- end
 
-  prop.t = prop:CreateFontString(nil, "OVERLAY")
-  prop.t:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
-  prop.t:SetPoint("LEFT", CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
-  prop.t:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.TEXT_COLOR))
-  prop.t:SetText(text)
+  prop.text = prop:CreateFontString(nil, "OVERLAY")
+  prop.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
+  prop.text:SetPoint("LEFT", CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
+  prop.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.TEXT_COLOR))
 
-  prop.v = prop:CreateFontString(nil, "OVERLAY")
-  prop.v:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
-  prop.v:SetPoint("RIGHT", -CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
-  prop.v:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.VALUE_COLOR))
-  prop.v:SetText(value)
+  prop.value = prop:CreateFontString(nil, "OVERLAY")
+  prop.value:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
+  prop.value:SetPoint("RIGHT", -CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
+  prop.value:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.VALUE_COLOR))
 
   return prop
 end
 
-function addon:CgpMain()
+function addon:CreateCgp()
   -- Make sure ONLY Create it once to avoid OOM
   if self.CT_CGP then
-    self.CT_CGP:Show()
-    -- self.CT_CGP_DETAIL.bg:Show()
     return
   end
   --
   local cgp = addon:CreateBaseWindow("CT_CHARACTER_GEAR_PANEL")
   self.CT_CGP = cgp
+  cgp:Hide()
 
   cgp:SetSize(CT_THEME.CGP.WIDTH, CT_THEME.CGP.HEIGHT)
 
@@ -1088,11 +1109,7 @@ function addon:CgpMain()
   content:SetPoint("TOPLEFT", banner, "BOTTOMLEFT", 0, 0)
   content:SetPoint("BOTTOMRIGHT", self.CT_CGP, "BOTTOMRIGHT", 0, 0)
 
-  -- local xbg = detail:CreateTexture(nil, "BACKGROUND")
-  -- xbg:SetAllPoints()
-  -- xbg:SetColorTexture(1, 1, 1)
-
-  content.cells = {}
+  content.slots = {}
   local W = content:GetWidth()
   local H = content:GetHeight()
   local w = 48 -- 基础列宽
@@ -1100,9 +1117,6 @@ function addon:CgpMain()
   local spaceX = (W - (4 * w)) / 5
   local spaceY = (H - (8 * h)) / 9
 
-  -- ====================================================================
-  -- 🌟 核心步骤 1：单独创建中间合并的巨型大格子
-  -- ====================================================================
   -- 巨型格子的左上角坐标，正好是（第2列的横向偏移，第1行的纵向偏移）
   local bigOffsetX = (2 * spaceX) + ((2 - 1) * w)
   local bigOffsetY = (1 * spaceY) + ((1 - 1) * h)
@@ -1118,375 +1132,219 @@ function addon:CgpMain()
   detail:SetSize(detailWidth, detailHeight)
   detail:SetPoint("TOPLEFT", content, "TOPLEFT", bigOffsetX, -bigOffsetY)
 
-  -- 给巨型大格子涂上一个显眼的醒目底色（比如深灰色）
-  -- detail.bg = detail:CreateTexture(nil, "BACKGROUND")
-  -- detail.bg:SetAllPoints()
-  -- detail.bg:SetColorTexture(0.2, 0.2, 0.2, 0.9)
+  -- Player
   detail.name = addon:CpgDetailHeadline(nil, detail)
   detail.name.layoutIndex = 0
 
-  -- detail.name.name:SetText("名字长了怎么")
-  detail.name.text:SetText("Zooooooooooo")
+  -- Equipped Level
+  detail.equippedLevelBar = addon:CpgDetailBar(nil, detail)
+  detail.equippedLevelBar.layoutIndex = 1
+  detail.equippedLevelBar.text:SetText("物品等级")
 
-  -- name bar
-  detail.nameBar = addon:CpgDetailBar(nil, detail, "物品等级")
-  detail.nameBar.layoutIndex = 1
+  detail.equippedLevel = addon:CpgDetailHeadline(nil, detail)
+  detail.equippedLevel.layoutIndex = 2
 
-  detail.itemLv = addon:CpgDetailHeadline(nil, detail)
-  detail.itemLv.layoutIndex = 2
-  detail.itemLv.text:SetText("290")
+  -- Basic Stat
+  detail.basicStatBar = addon:CpgDetailBar(nil, detail)
+  detail.basicStatBar.layoutIndex = 3
+  detail.basicStatBar.text:SetText("属性")
 
-  detail.propBar = addon:CpgDetailBar(nil, detail, "属性")
-  detail.propBar.layoutIndex = 3
+  detail.STRENGTH = addon:CpgDetailProperty(nil, detail)
+  detail.STRENGTH.layoutIndex = 31
+  detail.STRENGTH.text:SetText("力量")
+  detail.AGILITY = addon:CpgDetailProperty(nil, detail)
+  detail.AGILITY.layoutIndex = 32
+  detail.AGILITY.text:SetText("敏捷")
+  detail.INTELLECT = addon:CpgDetailProperty(nil, detail)
+  detail.INTELLECT.layoutIndex = 33
+  detail.INTELLECT.text:SetText("智力")
 
-  detail.prop1 = addon:CpgDetailProperty(nil, detail, "力量", "102", true)
-  detail.prop1.layoutIndex = 4
-  detail.prop2 = addon:CpgDetailProperty(nil, detail, "耐力", "12202", false)
-  detail.prop2.layoutIndex = 5
-  detail.prop3 = addon:CpgDetailProperty(nil, detail, "护甲", "1202", true)
-  detail.prop3.layoutIndex = 6
+  detail.STAMINA = addon:CpgDetailProperty(nil, detail)
+  detail.STAMINA.layoutIndex = 38
+  detail.STAMINA.text:SetText("耐力")
 
-  detail.exPorpBar = addon:CpgDetailBar(nil, detail, "强化属性")
-  detail.exPorpBar.layoutIndex = 7
+  detail.ARMOR = addon:CpgDetailProperty(nil, detail)
+  detail.ARMOR.layoutIndex = 39
+  detail.ARMOR.text:SetText("护甲")
 
-  detail.prop11 = addon:CpgDetailProperty(nil, detail, "力量", "102", true)
-  detail.prop11.layoutIndex = 8
-  detail.prop21 = addon:CpgDetailProperty(nil, detail, "耐力", "12202", false)
-  detail.prop21.layoutIndex = 9
-  detail.prop31 = addon:CpgDetailProperty(nil, detail, "护甲", "1202", true)
-  detail.prop31.layoutIndex = 10
+  -- Secondary Stat
+  detail.secondaryStatsBar = addon:CpgDetailBar(nil, detail)
+  detail.secondaryStatsBar.layoutIndex = 40
+  detail.secondaryStatsBar.text:SetText("强化属性")
 
-  -- 1. 创建你的属性详情面板 (承载容器)
-  -- local myInfoPanel = CreateFrame("Frame", "CT_InfoRowPanel", detail, "BackdropTemplate")
-  -- myInfoPanel:SetSize(detailWidth - 20, detailHeight - 20) -- 比你的中间大格子稍微缩一点边距
-  -- myInfoPanel:SetPoint("TOPLEFT", self.CT_CGP_DETAIL, "TOPLEFT", 10, -10)
+  detail.CRITICAL_STRIKE = addon:CpgDetailProperty(nil, detail)
+  detail.CRITICAL_STRIKE.layoutIndex = 41
+  detail.CRITICAL_STRIKE.text:SetText("暴击")
 
-  -- myInfoPanel.rows = {}
+  detail.HASTE = addon:CpgDetailProperty(nil, detail)
+  detail.HASTE.layoutIndex = 42
+  detail.HASTE.text:SetText("急速")
 
-  -- 2. 动态添加“双端对齐文本行”的函数
-  -- function myInfoPanel:AddDataRow(leftText, rightText)
-  --   local idx = #self.rows + 1
-  --   local rowHeight = 20 -- 每一行的高度
-  --   local rowSpacing = 6 -- 行与行之间的间距
+  detail.MASTERY = addon:CpgDetailProperty(nil, detail)
+  detail.MASTERY.layoutIndex = 43
+  detail.MASTERY.text:SetText("精通")
 
-  --   -- 创建一行的透明外壳
-  --   local row = CreateFrame("Frame", nil, self)
-  --   row:SetHeight(rowHeight)
+  detail.VERSATILITY = addon:CpgDetailProperty(nil, detail)
+  detail.VERSATILITY.layoutIndex = 44
+  detail.VERSATILITY.text:SetText("全能")
 
-  --   -- 🟢 核心排版：横向把左右两端拉满贴住父容器，纵向实施链式锚定
-  --   if idx == 1 then
-  --     -- 第一行，死死贴住大父壳子的顶部
-  --     row:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-  --     row:SetPoint("TOPRIGHT", self, "TOPRIGHT", 0, 0)
-  --   else
-  --     -- 后续的行，哥哥贴弟弟，永远钉在上一行的屁股后面
-  --     local previousRow = self.rows[idx - 1]
-  --     row:SetPoint("TOPLEFT", previousRow, "BOTTOMLEFT", 0, -rowSpacing)
-  --     row:SetPoint("TOPRIGHT", previousRow, "BOTTOMRIGHT", 0, -rowSpacing)
-  --   end
+  detail.LIFESTEAL = addon:CpgDetailProperty(nil, detail)
+  detail.LIFESTEAL.layoutIndex = 45
+  detail.LIFESTEAL.text:SetText("吸血")
 
-  --   -- 3. 创建左侧文字（居左对齐）
-  --   row.leftFS = row:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  --   row.leftFS:SetPoint("LEFT", row, "LEFT", 0, 0)
-  --   row.leftFS:SetJustifyH("LEFT")
-  --   row.leftFS:SetText(leftText)
+  detail.SPEED = addon:CpgDetailProperty(nil, detail)
+  detail.SPEED.layoutIndex = 46
+  detail.SPEED.text:SetText("加速")
 
-  --   -- 4. 创建右侧文字（居右对齐）
-  --   row.rightFS = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-  --   row.rightFS:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-  --   row.rightFS:SetJustifyH("RIGHT")
-  --   row.rightFS:SetText(rightText)
+  detail.AVOIDANCE = addon:CpgDetailProperty(nil, detail)
+  detail.AVOIDANCE.layoutIndex = 47
+  detail.AVOIDANCE.text:SetText("闪避")
 
-  --   -- 存入数组，方便以后动态更新内容
-  --   table.insert(self.rows, row)
-  -- end
-
-  -- bigCell.text = bigCell:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  -- bigCell.text:SetPoint("CENTER", bigCell, "CENTER", 0, 0)
-  -- bigCell.text:SetText("中间合并大格子\n(装等成就展示区)")
+  detail.spec = addon:CpgDetailBar(nil, detail)
+  detail.spec.layoutIndex = 100
 
   detail:Layout()
   -- 将大格子挂载在你的索引结构里，方便以后调用它
   content.detail = detail
   -- ====================================================================
-  -- 🌟 核心步骤 2：生成常规小格子，并无情跳过合并区域
+  -- 生成常规小格子，并跳过合并区域
   -- ====================================================================
   for colIdx = 1, 4 do
-    -- detail.cells[colIdx] = {}
     local offsetX = (colIdx * spaceX) + ((colIdx - 1) * w)
 
     for rowIdx = 1, 8 do
-      -- 🔍 核心拦截：如果是第 2 或第 3 列，且行数在 1 到 7 之间，直接跳过不创建！
+      -- 如果是第2列 或 第3列，且行数在 1 到 7 之间，直接跳过不创建。
       if (colIdx == 2 or colIdx == 3) and (rowIdx >= 1 and rowIdx <= 7) then
         -- CONTINUE
       else
         -- 创建正常的独立小格子
-        local cell = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        cell:SetSize(w, h)
+        -- local slot = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        local slot = CreateFrame("Button", nil, content, "BackdropTemplate")
+        slot:SetSize(w, h)
 
         local offsetY = (rowIdx * spaceY) + ((rowIdx - 1) * h)
-        cell:SetPoint("TOPLEFT", content, "TOPLEFT", offsetX, -offsetY)
+        slot:SetPoint("TOPLEFT", content, "TOPLEFT", offsetX, -offsetY)
 
-        local cbg = cell:CreateTexture(nil, "BACKGROUND")
-        cbg:SetAllPoints()
-        cbg:SetColorTexture(1 / colIdx, 1 / rowIdx, 0.4, 0.8)
+        slot.icon = slot:CreateTexture(nil, "BACKGROUND")
+        slot.icon:SetAllPoints(slot)
+        slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
 
-        cell.text = cell:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-        cell.text:SetPoint("CENTER", cell, "CENTER", 0, 0)
-        cell.text:SetText(string.format("%d,%d", colIdx, rowIdx))
+        slot.quality = slot:CreateTexture(nil, "OVERLAY")
+        slot.quality:SetSize(unpack(CT_THEME.CGP.SLOT.QUALITY.SIZE))
+        slot.quality:SetPoint("TOPLEFT", slot, "TOPLEFT", unpack(CT_THEME.CGP.SLOT.QUALITY.POINT))
+        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
 
-        table.insert(content.cells, cell)
+        slot.itemLevel = slot:CreateFontString(nil, "OVERLAY")
+        slot.itemLevel:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.SLOT.ITEM_LEVEL.FONT])
+        slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+        slot.itemLevel:SetPoint(
+          "BOTTOMRIGHT",
+          slot,
+          "BOTTOMRIGHT",
+          -CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING,
+          CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING
+        )
+        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        slot:SetScript("OnClick", function(self)
+          if self.itemLink and IsShiftKeyDown() then
+            local editBox = ChatEdit_GetActiveWindow()
+            if editBox then editBox:Insert(self.itemLink) end
+          end
+        end)
+
+        table.insert(content.slots, slot)
       end
     end
   end
-
-  for idx, _ in ipairs(content.cells) do
-    print(string.format("%d - %d", idx, GEAR_SLOTS_MAPPING[idx]))
-  end
-  pxxxx = addon:GetCharacterStats()
 end
 
--- function addon:GetCharacterStats()
---   local statsList = {}
+function addon:ShowCgp(id)
+  addon:CreateCgp()
+  local character = CharactersTrackerDB.CHARACTERS[id]
+  if not character or not character.name then return end
 
---   -- ====================================================================
---   -- 1. 修正版：基础核心属性（直接读取真实的当前总值）
---   -- ====================================================================
---   local primaryStats = {
---     { id = 3, name = SPEC_FRAME_STAMINA or "耐力" },
---     { id = 1, name = SPEC_FRAME_STRENGTH or "力量" },
---     { id = 2, name = SPEC_FRAME_AGILITY or "敏捷" },
---     { id = 4, name = SPEC_FRAME_INTELLECT or "智力" }
---   }
+  local detail = self.CT_CGP_DETAIL
 
---   for _, stat in ipairs(primaryStats) do
---     -- 🟢 现代魔兽核心：第一个返回值 base 已经是包含大部分装备和被动计算后的当前实际总值了！
---     local currentTotal = UnitStat("player", stat.id)
+  detail.name.text:SetText(FORMATTERS.NAME(character))
+  detail.equippedLevel.text:SetText(string.format("%d", character.equippedLevel or 0))
 
---     if currentTotal and currentTotal > 0 then
---       -- 耐力永远显示；其余主属性只有在它属于当前职业（大于基础十几点）时才显示
---       if stat.id == 3 or currentTotal > 50 then
---         table.insert(statsList, { name = stat.name, value = tostring(currentTotal) })
---       end
---     end
---   end
-
---   -- ====================================================================
---   -- 2. 强化二次属性（Secondary Stats）
---   -- ====================================================================
---   local critChance = GetCritChance()
---   table.insert(statsList, { name = STAT_CRITICAL_STRIKE or "暴击", value = string.format("%.2f%%", critChance) })
-
---   local hastePercent = GetHaste()
---   table.insert(statsList, { name = STAT_HASTE or "急速", value = string.format("%.2f%%", hastePercent) })
-
---   local masteryEffect = GetMasteryEffect()
---   table.insert(statsList, { name = STAT_MASTERY or "精通", value = string.format("%.2f%%", masteryEffect) })
-
---   local versaDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE)
---   table.insert(statsList, { name = STAT_VERSATILITY or "全能", value = string.format("%.2f%%", versaDamageBonus) })
-
---   -- ====================================================================
---   -- 3. 辅助属性（第三绿字，这次移除了 > 0 的拦截限制，确保 0% 也能稳定显示）
---   -- ====================================================================
---   -- 🟢 吸血 (Leech)
---   -- local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL)
---   -- table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent or 0) })
---   -- 🟢 修正：使用全局 GetLeech() 抓取包含天赋、附魔、绿字在内的全额最终吸血
---   -- 🟢 终极修正：使用暴雪官方属性面板底层一致的 Rating 计算方法
---   local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
---   table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
-
---   -- 🟢 加速 (Speed)
---   local speedPercent = GetCombatRatingBonus(CR_SPEED)
---   table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
-
---   -- 🟢 闪避 (Avoidance)
---   local avoidancePercent = GetCombatRatingBonus(CR_AVOIDANCE)
---   table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent or 0) })
-
---   return statsList
--- end
-
-
--- frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- 登录游戏/跨图加载
--- frame:RegisterEvent("UNIT_INVENTORY_CHANGED") -- 装备发生变化
--- frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED") -- 切换了专精/天赋
--- frame:RegisterEvent("PLAYER_LEVEL_UP") -- 角色升级
--- frame:RegisterEvent("UNIT_STATS") -- 基础主属性发生变化
--- frame:RegisterEvent("COMBAT_RATING_UPDATE") -- 二次/三次绿字属性发生变化
-function addon:GetCharacterStats()
-  local statsList = {}
-
-  -- ====================================================================
-  -- 1. 基础核心属性（力量、敏捷、智力、耐力、以及补全的【护甲】）
-  -- ====================================================================
-
-  -- 🟢 耐力 (Stamina)
-  local currentStam = UnitStat("player", 3)
-  if currentStam and currentStam > 0 then
-    table.insert(statsList, { name = SPEC_FRAME_STAMINA or "耐力", value = tostring(currentStam) })
-  end
-
-  -- 🟢 补全：护甲 (Armor)
-  -- UnitArmor 返回的第一个值就是当前面板最终总护甲
-  -- 🟢 修正：使用全版本通用的 ARMOR 常量，且去掉多余的拦截，强制注入
-  local baseArmor, effectiveArmor, armorArmor, bonusArmor = UnitArmor("player")
-  -- 第二个返回值 effectiveArmor 是包含了所有天赋、光环、护甲专精加成后的最终实际护甲
-  local totalArmor = effectiveArmor or baseArmor or 0
-
-  table.insert(statsList, { name = ARMOR or "护甲", value = tostring(totalArmor) })
-
-  -- 动态过滤其余三项主属性（力量/敏捷/智力）
-  local primaryTypes = {
-    { id = 1, tag = "STRENGTH", name = SPEC_FRAME_STRENGTH or "力量" },
-    { id = 2, tag = "AGILITY", name = SPEC_FRAME_AGILITY or "敏捷" },
-    { id = 4, tag = "INTELLECT", name = SPEC_FRAME_INTELLECT or "智力" },
-  }
-  for _, stat in ipairs(primaryTypes) do
-    if self:IsStatEffectiveForCurrentSpec(stat.tag) then
-      local val = UnitStat("player", stat.id)
-      table.insert(statsList, { name = stat.name, value = tostring(val) })
-    end
-  end
-
-  -- ====================================================================
-  -- 2. 强化二次属性 (Secondary Stats)
-  -- ====================================================================
-  local critChance = GetCritChance()
-  table.insert(statsList, { name = STAT_CRITICAL_STRIKE or "暴击", value = string.format("%.2f%%", critChance) })
-
-  local hastePercent = GetHaste()
-  table.insert(statsList, { name = STAT_HASTE or "急速", value = string.format("%.2f%%", hastePercent) })
-
-  if self:IsStatEffectiveForCurrentSpec("MASTERY") then
-    local masteryEffect = GetMasteryEffect()
-    table.insert(statsList, { name = STAT_MASTERY or "精通", value = string.format("%.2f%%", masteryEffect) })
-  end
-
-  local versaDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE)
-  table.insert(statsList, { name = STAT_VERSATILITY or "全能", value = string.format("%.2f%%", versaDamageBonus) })
-
-  -- ====================================================================
-  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
-  -- ====================================================================
-  -- -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
-  -- local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
-  -- table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
-
-  -- -- 🟢 加速 (Speed)
-  -- local speedPercent = GetCombatRatingBonus(CR_SPEED)
-  -- table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
-
-  -- -- 🟢 闪避 (Avoidance)
-  -- local avoidancePercent = GetCombatRatingBonus(CR_AVOIDANCE) + (GetAvoidance and GetAvoidance() or 0)
-  -- table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
-  -- ====================================================================
-  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
-  -- ====================================================================
-  -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
-  local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
-  table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
-
-  -- 🟢 加速 (Speed)
-  local speedPercent = GetCombatRatingBonus(CR_SPEED)
-  table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
-
-  -- 🟢 修正版：闪避 (Avoidance)
-  -- 直接调用全局 GetAvoidance() 即可，它本身就是包含一切加成的最终全额百分比
-  local avoidancePercent = GetAvoidance() or 0
-  table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
-  return statsList
-end
-
--- 判断某个属性在当前职业/专精下是否为“核心推荐属性”
--- @param statType string: "STRENGTH", "AGILITY", "INTELLECT", "MASTERY" 等
--- @return boolean: 是否生效/是否推荐显示
-function addon:IsStatEffectiveForCurrentSpec(statType)
-  -- 1. 获取当前专精索引 (1 到 4)
-  local currentSpec = GetSpecialization()
-  if not currentSpec then return false end
-
-  -- 2. 获取专精的详细信息
-  -- id, name, description, icon, role, primaryStat = GetSpecializationInfo(currentSpec)
-  -- primaryStat 返回值：1 = 力量 (LE_UNIT_STAT_STRENGTH), 2 = 敏捷 (LE_UNIT_STAT_AGILITY), 4 = 智力 (LE_UNIT_STAT_INTELLECT)
-  local _, _, _, _, _, primaryStat = GetSpecializationInfo(currentSpec)
-
-  -- 3. 校验主属性拦截
-  if statType == "STRENGTH" and primaryStat ~= 1 then
-    return false -- 当前专精不需求力量
-  elseif statType == "AGILITY" and primaryStat ~= 2 then
-    return false -- 当前专精不需求敏捷
-  elseif statType == "INTELLECT" and primaryStat ~= 4 then
-    return false -- 当前专精不需求智力
-  end
-
-  -- 4. 校验精通拦截 (低等级小号如果还没学会精通，官方面板会隐藏)
-  if statType == "MASTERY" then
-    local isMasteryKnown = IsSpellKnown(GLOBAL_M_SPELLID or 8647) -- 8647 是暴雪各职业精通的通用底层法术ID
-    if not isMasteryKnown and UnitLevel("player") < 10 then
-      return false
-    end
-  end
-
-  -- 耐力、暴击、急速、全能、吸血、闪避、加速对所有职业都生效，默认全放行
-  return true
-end
-
-function addon:ShowCharacterDetail(guid)
-  CreateDetailWindow()
-  local data = CharactersTrackerDB.CHARACTERS[guid]
-  if not data or not data.name then return end
-
-  local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
-  DetailFrame.title:SetText(string.format("|c%s%s|r", classColor, data.name))
-
-  if data.equippedLevel and data.equippedLevel > 0 then
-    if data.officialLevel then
-      DetailFrame.equippedLevelText:SetText(string.format("|cffffd100%.2f|r", data.equippedLevel))
+  local stats = character.stats or {}
+  local effected = 0
+  for _, k in ipairs(BASIC_STATS_LAYOUT) do
+    local stat = stats.basic[k]
+    if stat and stat > 0 then
+      detail[k].value:SetText(stat)
+      if bit.band(effected, 1) == 0 then
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+      else
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+      end
+      effected = effected + 1
     else
-      DetailFrame.equippedLevelText:SetText(string.format("|cffffd100%s%.2f|r", SYMBOL_APPROX_EQ, data.equippedLevel))
+      detail[k]:Hide()
     end
-  else
-    DetailFrame.equippedLevelText:SetText("")
   end
 
-  for _, slotId in ipairs(SCAN_SLOTS) do
-    local btn = DetailFrame.slotsUI[slotId]
-    local gear = data.gear and data.gear[slotId]
+  effected = 0
+  for _, k in ipairs(SECONDARY_STATS_LAYOUT) do
+    local stat = stats.secondary[k]
+    if stat and stat > 0 then
+      detail[k].value:SetText(string.format("%.2f%%", stat))
+      if bit.band(effected, 1) == 0 then
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+      else
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+      end
+      effected = effected + 1
+    else
+      detail[k]:Hide()
+    end
+  end
+
+  if stats.specialization then
+    detail.spec.text:SetText(FORMATTERS.CLASS_COLOR(character, stats.specialization))
+  end
+
+  detail:Layout()
+
+  local content = self.CT_CGP_CONTENT
+  for idx, _ in ipairs(content.slots) do
+    local slotId = GEAR_SLOTS_MAPPING[idx]
+
+    local slot = content.slots[idx]
+    local gear = character.gear[slotId]
 
     if gear and gear.link then
-      local itemTexture = C_Item.GetItemIconByID(gear.link)
-      btn.icon:SetColorTexture(1, 1, 1, 1)
-      btn.icon:SetTexture(itemTexture or 134400)
-      btn.itemLink = gear.link
-      btn.itemLevelText:SetText(gear.level > 0 and gear.level or "")
+      local texture = C_Item.GetItemIconByID(gear.link)
+      local quality = C_Item.GetItemQualityByID(gear.link)
+      slot.icon:SetTexture(texture or 134400)
+      slot.itemLink = gear.link
 
-      if gear.enchant then btn.enchantDot:Show() else btn.enchantDot:Hide() end
+      if quality and quality > 1 then
+        local r, g, b = C_Item.GetItemQualityColor(quality)
+        slot.quality:SetColorTexture(r, g, b)
+      else
+        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+      end
+      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+      slot.itemLevel:SetText(gear.level or "")
 
-      btn:SetScript("OnEnter", function(self)
+      slot:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetHyperlink(self.itemLink)
         GameTooltip:Show()
       end)
-
-      local quality = C_Item.GetItemQualityByID(gear.link)
-      if quality and quality > 1 then
-        local r, g, b = C_Item.GetItemQualityColor(quality)
-        btn:SetBackdropBorderColor(r, g, b, 1)
-      else
-        btn:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
-      end
     else
-      btn.icon:SetColorTexture(0.2, 0.2, 0.2, 0.4)
-      btn.itemLink = nil
-      btn.itemLevelText:SetText("")
-      btn.enchantDot:Hide()
-      btn:SetBackdropBorderColor(0.15, 0.15, 0.15, 0.8)
-      btn:SetScript("OnEnter", nil)
+      slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
+      slot.itemLink = nil
+      slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+      slot.quality:Hide()
+      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+      slot.itemLevel:SetText("")
+      slot:SetScript("OnEnter", nil)
     end
   end
-  DetailFrame:Show()
+  self.CT_CGP:Show()
 end
 
 -- ==========================================

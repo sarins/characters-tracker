@@ -124,6 +124,45 @@ local function InitCharacterCache()
   CharactersTrackerDB.CHARACTERS[guid] = character
 end
 
+local function ScanCharacterStats()
+  local stats = {
+    basic = {},
+    secondary = {}
+  }
+  -- Stats
+  stats.basic["STAMINA"] = UnitStat("player", 3) or 0 -- 耐力
+
+  local baseArmor, effectiveArmor, _, _ = UnitArmor("player")
+  stats.basic["ARMOR"] = effectiveArmor or baseArmor or 0 -- 护甲
+
+  local spec = GetSpecialization()
+  if spec then
+    local _, specialization, _, _, _, primaryStat = GetSpecializationInfo(spec)
+    stats.specialization = specialization --专精
+    if 1 == primaryStat then
+      stats.basic["STRENGTH"] = UnitStat("player", primaryStat) or 0
+    elseif 2 == primaryStat then
+      stats.basic["AGILITY"] = UnitStat("player", primaryStat) or 0
+    elseif 4 == primaryStat then
+      stats.basic["INTELLECT"] = UnitStat("player", primaryStat) or 0
+    else
+      -- CONTINUE
+    end
+  end
+  -- Secondary Stats
+  stats.secondary["CRITICAL_STRIKE"] = (GetCritChance() or 0)                              --暴击
+  stats.secondary["HASTE"] = (GetHaste() or 0)                                             --急速
+  stats.secondary["MASTERY"] = (GetMasteryEffect() or 0)                                   --精通
+  stats.secondary["VERSATILITY"] = (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0) --全能
+  stats.secondary["LIFESTEAL"] = (GetCombatRatingBonus(CR_LIFESTEAL) or 0) +
+      (GetLifesteal and GetLifesteal() or 0)                                               --吸血
+  stats.secondary["SPEED"] = (GetCombatRatingBonus(CR_SPEED) or 0)                         --加速
+  stats.secondary["AVOIDANCE"] = (GetAvoidance() or 0)                                     --闪避
+
+  CharactersTrackerDB.CHARACTERS[guid].stats = stats
+  return stats
+end
+
 local function sync(f)
   local character = CharactersTrackerDB.CHARACTERS[guid] or {}
   if "function" == type(f) then
@@ -1398,8 +1437,137 @@ SlashCmdList["WBCT"] = function(msg)
   elseif "debug" == msg then
     addon:ClpMain()
   elseif "x" == msg then
-    addon:CgpMain()
+    -- addon:CreateCgp()
+    addon:ShowCgp("Player-709-06D59F76")
+  elseif "t" == msg then
+    XXX = ScanCharacterStats()
   else
     if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
   end
+end
+
+
+
+-- frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- 登录游戏/跨图加载
+-- frame:RegisterEvent("UNIT_INVENTORY_CHANGED") -- 装备发生变化
+-- frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED") -- 切换了专精/天赋
+-- frame:RegisterEvent("PLAYER_LEVEL_UP") -- 角色升级
+-- frame:RegisterEvent("UNIT_STATS") -- 基础主属性发生变化
+-- frame:RegisterEvent("COMBAT_RATING_UPDATE") -- 二次/三次绿字属性发生变化
+function addon:GetCharacterStats()
+  local statsList = {}
+
+  -- ====================================================================
+  -- 1. 基础核心属性（力量、敏捷、智力、耐力、以及补全的【护甲】）
+  -- ====================================================================
+
+  -- 🟢 耐力 (Stamina)
+  local currentStam = UnitStat("player", 3)
+  if currentStam and currentStam > 0 then
+    table.insert(statsList, { name = SPEC_FRAME_STAMINA or "耐力", value = tostring(currentStam) })
+  end
+
+  -- 🟢 补全：护甲 (Armor)
+  -- UnitArmor 返回的第一个值就是当前面板最终总护甲
+  -- 🟢 修正：使用全版本通用的 ARMOR 常量，且去掉多余的拦截，强制注入
+  local baseArmor, effectiveArmor, armorArmor, bonusArmor = UnitArmor("player")
+  -- 第二个返回值 effectiveArmor 是包含了所有天赋、光环、护甲专精加成后的最终实际护甲
+  local totalArmor = effectiveArmor or baseArmor or 0
+
+  table.insert(statsList, { name = ARMOR or "护甲", value = tostring(totalArmor) })
+
+  -- 动态过滤其余三项主属性（力量/敏捷/智力）
+  local primaryTypes = {
+    { id = 1, tag = "STRENGTH", name = SPEC_FRAME_STRENGTH or "力量" },
+    { id = 2, tag = "AGILITY", name = SPEC_FRAME_AGILITY or "敏捷" },
+    { id = 4, tag = "INTELLECT", name = SPEC_FRAME_INTELLECT or "智力" },
+  }
+  for _, stat in ipairs(primaryTypes) do
+    if self:IsStatEffectiveForCurrentSpec(stat.tag) then
+      local val = UnitStat("player", stat.id)
+      table.insert(statsList, { name = stat.name, value = tostring(val) })
+    end
+  end
+
+  -- ====================================================================
+  -- 2. 强化二次属性 (Secondary Stats)
+  -- ====================================================================
+  local critChance = GetCritChance()
+  table.insert(statsList, { name = STAT_CRITICAL_STRIKE or "暴击", value = string.format("%.2f%%", critChance) })
+
+  local hastePercent = GetHaste()
+  table.insert(statsList, { name = STAT_HASTE or "急速", value = string.format("%.2f%%", hastePercent) })
+
+  if self:IsStatEffectiveForCurrentSpec("MASTERY") then
+    local masteryEffect = GetMasteryEffect()
+    table.insert(statsList, { name = STAT_MASTERY or "精通", value = string.format("%.2f%%", masteryEffect) })
+  end
+
+  local versaDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE)
+  table.insert(statsList, { name = STAT_VERSATILITY or "全能", value = string.format("%.2f%%", versaDamageBonus) })
+
+  -- ====================================================================
+  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
+  -- ====================================================================
+  -- -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
+  -- local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
+  -- table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
+
+  -- -- 🟢 加速 (Speed)
+  -- local speedPercent = GetCombatRatingBonus(CR_SPEED)
+  -- table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
+
+  -- -- 🟢 闪避 (Avoidance)
+  -- local avoidancePercent = GetCombatRatingBonus(CR_AVOIDANCE) + (GetAvoidance and GetAvoidance() or 0)
+  -- table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
+  -- ====================================================================
+  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
+  -- ====================================================================
+  -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
+  local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
+  table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
+
+  -- 🟢 加速 (Speed)
+  local speedPercent = GetCombatRatingBonus(CR_SPEED)
+  table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
+
+  -- 🟢 修正版：闪避 (Avoidance)
+  -- 直接调用全局 GetAvoidance() 即可，它本身就是包含一切加成的最终全额百分比
+  local avoidancePercent = GetAvoidance() or 0
+  table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
+  return statsList
+end
+
+-- 判断某个属性在当前职业/专精下是否为“核心推荐属性”
+-- @param statType string: "STRENGTH", "AGILITY", "INTELLECT", "MASTERY" 等
+-- @return boolean: 是否生效/是否推荐显示
+function addon:IsStatEffectiveForCurrentSpec(statType)
+  -- 1. 获取当前专精索引 (1 到 4)
+  local currentSpec = GetSpecialization()
+  if not currentSpec then return false end
+
+  -- 2. 获取专精的详细信息
+  -- id, name, description, icon, role, primaryStat = GetSpecializationInfo(currentSpec)
+  -- primaryStat 返回值：1 = 力量 (LE_UNIT_STAT_STRENGTH), 2 = 敏捷 (LE_UNIT_STAT_AGILITY), 4 = 智力 (LE_UNIT_STAT_INTELLECT)
+  local _, _, _, _, _, primaryStat = GetSpecializationInfo(currentSpec)
+
+  -- 3. 校验主属性拦截
+  if statType == "STRENGTH" and primaryStat ~= 1 then
+    return false -- 当前专精不需求力量
+  elseif statType == "AGILITY" and primaryStat ~= 2 then
+    return false -- 当前专精不需求敏捷
+  elseif statType == "INTELLECT" and primaryStat ~= 4 then
+    return false -- 当前专精不需求智力
+  end
+
+  -- 4. 校验精通拦截 (低等级小号如果还没学会精通，官方面板会隐藏)
+  if statType == "MASTERY" then
+    local isMasteryKnown = IsSpellKnown(GLOBAL_M_SPELLID or 8647) -- 8647 是暴雪各职业精通的通用底层法术ID
+    if not isMasteryKnown and UnitLevel("player") < 10 then
+      return false
+    end
+  end
+
+  -- 耐力、暴击、急速、全能、吸血、闪避、加速对所有职业都生效，默认全放行
+  return true
 end
