@@ -11,18 +11,13 @@ local L = CharactersTracker_Locale
 -- CGP = Character Gear Panel
 -- ====================================================================
 
--- ITEM_QUALITY_COLORS[0].color
--- FACTION_BAR_COLORS
--- /dump print(FACTION_BAR_COLORS[1].color) -- issue
--- /dump print(ITEM_QUALITY_COLORS[0].color)
-
 -- ITEM_QUALITY_COLORS[0].color ：垃圾灰（适合做离线很久、或者未激活的号）。
 -- ITEM_QUALITY_COLORS[2].color ：优秀绿（适合做正常、安全的指标）。
 -- ITEM_QUALITY_COLORS[3].color ：精良蓝（适合做高亮）。
 -- ITEM_QUALITY_COLORS[4].color ：史诗紫（适合做满级、或者大米高分数的号）。
 -- ITEM_QUALITY_COLORS[5].color ：传说橙（适合做最核心、最显眼的数据）。
 
--- /dump print(HORDE_COLOR)
+-- /dump x = ITEM_QUALITY_COLORS[3].color:GenerateHexColorString()
 
 local MAX_LEVEL_OF_CHARACTER = GetMaxLevelForPlayerExpansion()
 
@@ -36,6 +31,22 @@ local GEAR_SLOTS_LAYOUT = {
   [4] = { 10, 6, 7, 8, 11, 12, 13, 14 } -- 第4列：手、腰、腿、脚、指1、指2、饰1、饰2
 }
 local GEAR_SLOTS_MAPPING = { 1, 2, 3, 15, 5, 4, 19, 9, 16, 17, 10, 6, 7, 8, 11, 12, 13, 14 }
+
+local TRACKED_CURRENCIES = {
+  3028, -- 修复的宝匣钥匙
+  3310, -- 宝匣钥匙碎片
+  2803, -- 晦幽铸币
+  3356, -- 未被污染的法力水晶
+  3418, -- 晦暗虚空核心
+  3378, -- 黎明之光法力熔剂
+  3383, -- 冒险者曙光纹章
+  3341, -- 老兵曙光纹章
+  3343, -- 勇士曙光纹章
+  3345, -- 英雄曙光纹章
+  3347, -- 神话曙光纹章
+  1792, -- 荣誉点数
+  1602, -- 征服点数
+}
 
 StaticPopupDialogs["CONFIRM_PURE_CHARACTER_DATA"] = {
   text = L["CT_CONFIRM_REMOVE_CHARACTER_DATA"],
@@ -88,20 +99,40 @@ local FORMATTERS = {
   LEVEL = function(c)
     if c and c.level and c.level > 0 then
       if c.level < MAX_LEVEL_OF_CHARACTER then
-        return c.level
+        return string.format("%s", c.level)
       end
-      return c.level
+      return string.format("|cffffd100%s|r", c.level)
     end
     return ""
   end,
   FACTION = function(c)
-    return c and c.faction or ""
+    if c and c.faction then
+      if "Alliance" == c.faction or "联盟" == c.faction then
+        return string.format("|cff0070de%s|r", c.faction)
+      elseif "Horde" == c.faction or "部落" == c.faction then
+        return string.format("|cffc41f3b%s|r", c.faction)
+      else
+      end
+    end
+    return ""
   end,
   ZONE = function(c)
     return c and c.zone or ""
   end,
   ITEM_LEVEL_FLOOR = function(c)
-    return c and math.floor(c.equippedLevel or 0)
+    if c and "number" == type(c.equippedLevel) then
+      local equippedLevel = math.floor(c.equippedLevel)
+      if equippedLevel > 233 then
+        return string.format("%s%s|r", ITEM_QUALITY_COLORS[4].hex, equippedLevel)
+      elseif equippedLevel > 220 then
+        return string.format("%s%s|r", ITEM_QUALITY_COLORS[3].hex, equippedLevel)
+      elseif equippedLevel > 130 then
+        return string.format("%s%s|r", ITEM_QUALITY_COLORS[2].hex, equippedLevel)
+      else
+        return string.format("%s%s|r", ITEM_QUALITY_COLORS[1].hex, equippedLevel)
+      end
+    end
+    return ""
   end,
   ITEM_LEVEL = function(c)
     return c and c.equippedLevel or 0
@@ -109,14 +140,18 @@ local FORMATTERS = {
   VAULT = function(c)
   end,
   M_SCORE = function(c)
-    return c and c.mScore or 0
+    return string.format("%d", c and c.mScore or 0)
   end,
   PLAYED = function(c)
-    return string.format(SecondsToTimeAbbrev(c.levelPlayed or 0)) ..
-        " / " .. string.format(SecondsToTimeAbbrev(c.played or 0))
+    return string.format(
+      "%s / %s",
+      string.format(SecondsToTimeAbbrev(c.levelPlayed or 0)),
+      string.format(SecondsToTimeAbbrev(c.played or 0))
+    )
   end,
   GOLD_FLOOR = function(c)
-    return c and math.floor((c.gold or 0) / 10000)
+    local gold = math.abs(c and c.gold or 0)
+    return FormatLargeNumber(math.floor(gold / 10000))
   end,
   GOLD = function(c)
     return c and ((c.gold or 0) / 10000)
@@ -325,7 +360,7 @@ local CT_THEME = {
           ODD  = { 0.1, 0.1, 0.1, 0.8 }, -- 奇数行背景
           EVEN = { 0.15, 0.15, 0.15, 0.9 },
         },
-        TEXT_COLOR = { 0.9, 0.9, 0.9 },
+        TEXT_COLOR = { 1.0, 0.82, 0.0 },
         VALUE_COLOR = { 0.9, 0.9, 0.9 },
         FONT = "TINY",
         PADDING = 4,
@@ -366,7 +401,7 @@ local META = {
       { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = "",                          fixed = false, align = "CENTER" },
       { id = "M_SCORE",    label = L["CLP_LABEL_M_SCORE"],    formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
       { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
-      { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "CENTER" },
+      { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT" },
       { id = "CURRENCIES", label = L["CLP_LABEL_CURRENCIES"], formatter = "",                          fixed = false, align = "CENTER", width = 64 },
       { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = "",                          fixed = false, align = "CENTER" },
       { id = "UPDATED",    label = L["CLP_LABEL_UPDATED"],    formatter = FORMATTERS.UPDATED2TA,       fixed = false, align = "CENTER" },
@@ -401,9 +436,73 @@ function addon:InitWorkspace()
   end
 end
 
-function addon:Util_FrameMarginAll(child, parent, margin)
-  child:SetPoint("TOPLEFT", parent, "TOPLEFT", margin, -margin)
-  child:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -margin, margin)
+-- function addon:Util_FrameMarginAll(child, parent, margin)
+--   child:SetPoint("TOPLEFT", parent, "TOPLEFT", margin, -margin)
+--   child:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -margin, margin)
+-- end
+
+-- Base moveable window factory
+function addon:Util_CreateBaseWindow(name, parent)
+  local positions = CharactersTrackerDB.SETTINGS.POSITIONS
+  local f = CreateFrame("Frame", name, parent, "BackdropTemplate")
+
+  f:SetClampedToScreen(true)
+  f:SetMovable(true)
+  f:EnableMouse(true)
+  f:RegisterForDrag("LeftButton")
+  local posKey = string.format("%s_%s", name, "Position")
+  f:SetScript("OnDragStart", f.StartMoving)
+  f:SetScript("OnDragStop", function(self)
+    self:StopMovingOrSizing()
+    local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
+    positions[posKey] = { point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs }
+  end)
+
+  local pos = positions[posKey]
+  if pos and "table" == type(pos) then
+    f:ClearAllPoints()
+    f:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+  else
+    f:SetPoint("CENTER")
+  end
+
+  tinsert(UISpecialFrames, name)
+  return f
+end
+
+function addon:Util_CreateBanner(name, parent, title, theme)
+  local banner = CreateFrame("Frame", name, parent)
+  banner:SetWidth(parent:GetWidth())
+  banner:SetHeight(theme.HEIGHT)
+  banner:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+
+  local bg = banner:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(unpack(theme.BG.COLOR))
+
+  local line = banner:CreateTexture(nil, "OVERLAY")
+  line:SetHeight(theme.LINE.HEIGHT)
+  line:SetPoint("BOTTOMLEFT", banner, "BOTTOMLEFT", 0, 0)
+  line:SetPoint("BOTTOMRIGHT", banner, "BOTTOMRIGHT", 0, 0)
+  line:SetColorTexture(unpack(theme.LINE.COLOR))
+
+  local icon = banner:CreateTexture(nil, "ARTWORK")
+  icon:SetPoint("LEFT", unpack(theme.ICON.POINT))
+  icon:SetSize(unpack(theme.ICON.SIZE))
+  icon:SetTexture(theme.ICON.TEXTURE)
+
+  local t = banner:CreateFontString(nil, "OVERLAY")
+  t:SetFontObject(self.GUI_FONTS["NORMAL"])
+  t:SetPoint("LEFT", banner, "LEFT", unpack(theme.TITLE.POINT))
+  t:SetTextColor(unpack(theme.TITLE.COLOR))
+  t:SetText(title)
+
+  local close = addon:Util_CreateButton(nil, banner, theme.CLOSE.TEXTURE, unpack(theme.CLOSE.SIZE))
+  close:SetPoint("RIGHT", banner, "RIGHT", unpack(theme.CLOSE.POINT))
+  close:SetScript("OnClick", function()
+    parent:Hide()
+  end)
+  return banner
 end
 
 -- Dropdown menu
@@ -851,10 +950,11 @@ function addon:ClpRefreshGrid()
             end
             cell:SetSize(widths[meta.id], CT_THEME.CLP.GRID.ROW.HEIGHT)
             cell.currencies:SetPoint("CENTER")
-            -- TODO
-            cell.currencies:SetScript("OnClick", function()
-              local dialog = StaticPopup_Show("CONFIRM_PURE_CHARACTER_DATA", character.name)
-              if dialog then dialog.data = character end
+            cell.currencies:SetScript("OnEnter", function(self)
+              addon:ShowCurrenciesTooltip(self, character)
+            end)
+            cell.currencies:SetScript("OnLeave", function()
+              GameTooltip:Hide()
             end)
             cell:Show()
           elseif "OPERATION" == meta.id then
@@ -889,6 +989,14 @@ function addon:ClpRefreshGrid()
             else
               -- do nothing
               cell.text:SetText("")
+            end
+            if "NAME" == meta.id then
+              cell:EnableMouse(true)
+              cell:SetScript("OnMouseDown", function(self, button)
+                if button == "LeftButton" then
+                  addon:ShowCgp(_rid)
+                end
+              end)
             end
             cell:Show()
           end
@@ -925,10 +1033,11 @@ function addon:ClpMain()
   }
 
   -- local clp = CreateFrame("Frame", "CT_CHARACTERS_LIST_PANEL", UIParent, "BackdropTemplate")
-  local clp = addon:CreateBaseWindow("CT_CHARACTERS_LIST_PANEL")
+  local clp = addon:Util_CreateBaseWindow("CT_CHARACTERS_LIST_PANEL", UIParent)
   self.CT_CLP = clp
 
   clp:SetHeight(CT_THEME.CLP.HEIGHT)
+  clp:SetFrameStrata("MEDIUM")
   -- clp:SetPoint("CENTER", UIParent, "CENTER")
   -- clp:SetClampedToScreen(true)
   -- clp:EnableMouse(true)
@@ -950,401 +1059,54 @@ function addon:ClpMain()
   addon:ClpRefreshGrid()
 end
 
--- Base moveable window factory
-function addon:CreateBaseWindow(name)
-  local positions = CharactersTrackerDB.SETTINGS.POSITIONS
-  local f = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
-
-  f:SetClampedToScreen(true)
-  f:SetMovable(true)
-  f:EnableMouse(true)
-  f:RegisterForDrag("LeftButton")
-  local posKey = string.format("%s_%s", name, "Position")
-  f:SetScript("OnDragStart", f.StartMoving)
-  f:SetScript("OnDragStop", function(self)
-    self:StopMovingOrSizing()
-    local point, _, relativePoint, xOfs, yOfs = self:GetPoint()
-    positions[posKey] = { point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs }
-  end)
-
-  local pos = positions[posKey]
-  if pos and "table" == type(pos) then
-    f:ClearAllPoints()
-    f:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
-  else
-    f:SetPoint("CENTER")
-  end
-
-  tinsert(UISpecialFrames, name)
-  return f
-end
-
-function addon:Util_CreateBanner(name, parent, title, theme)
-  local banner = CreateFrame("Frame", name, parent)
-  banner:SetWidth(parent:GetWidth())
-  banner:SetHeight(theme.HEIGHT)
-  banner:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-
-  local bg = banner:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(unpack(theme.BG.COLOR))
-
-  local line = banner:CreateTexture(nil, "OVERLAY")
-  line:SetHeight(theme.LINE.HEIGHT)
-  line:SetPoint("BOTTOMLEFT", banner, "BOTTOMLEFT", 0, 0)
-  line:SetPoint("BOTTOMRIGHT", banner, "BOTTOMRIGHT", 0, 0)
-  line:SetColorTexture(unpack(theme.LINE.COLOR))
-
-  local icon = banner:CreateTexture(nil, "ARTWORK")
-  icon:SetPoint("LEFT", unpack(theme.ICON.POINT))
-  icon:SetSize(unpack(theme.ICON.SIZE))
-  icon:SetTexture(theme.ICON.TEXTURE)
-
-  local t = banner:CreateFontString(nil, "OVERLAY")
-  t:SetFontObject(self.GUI_FONTS["NORMAL"])
-  t:SetPoint("LEFT", banner, "LEFT", unpack(theme.TITLE.POINT))
-  t:SetTextColor(unpack(theme.TITLE.COLOR))
-  t:SetText(title)
-
-  local close = addon:Util_CreateButton(nil, banner, theme.CLOSE.TEXTURE, unpack(theme.CLOSE.SIZE))
-  close:SetPoint("RIGHT", banner, "RIGHT", unpack(theme.CLOSE.POINT))
-  close:SetScript("OnClick", function()
-    parent:Hide()
-  end)
-  return banner
-end
-
 -- ==========================================
--- Characters Gear Detail
+-- Currencies Tooltip
 -- ==========================================
-function addon:CpgDetailHeadline(name, parent)
-  local container = CreateFrame("Frame", name, parent)
-  container:SetWidth(parent:GetWidth())
-  container:SetHeight(CT_THEME.CGP.DETAIL.HEADLINE.HEIGHT)
-  container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+function addon:ShowCurrenciesTooltip(anchor, character)
+  if not anchor or not character or not character.currencies then return end
 
-  container.text = container:CreateFontString(nil, "OVERLAY")
-  container.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.HEADLINE.FONT])
-  container.text:SetPoint("CENTER")
-  return container
-end
+  GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
 
-function addon:CpgDetailBar(name, parent)
-  local bar = CreateFrame("Frame", name, parent)
-  bar:SetWidth(parent:GetWidth())
-  bar:SetHeight(CT_THEME.CGP.DETAIL.BAR.HEIGHT)
-  bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+  GameTooltip:AddLine(FORMATTERS.NAME(character))
+  GameTooltip:AddLine(" ")
 
-  bar.bg = bar:CreateTexture(nil, "BACKGROUND")
-  bar.bg:SetAllPoints()
-  bar.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.BG.COLOR))
-
-  bar.line = bar:CreateTexture(nil, "OVERLAY")
-  bar.line:SetHeight(CT_THEME.CGP.DETAIL.BAR.LINE.HEIGHT)
-  bar.line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
-  bar.line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
-  bar.line:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.LINE.COLOR))
-
-  bar.text = bar:CreateFontString(nil, "OVERLAY")
-  bar.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.BAR.TITLE.FONT])
-  bar.text:SetPoint("CENTER")
-  bar.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.BAR.TITLE.COLOR))
-
-  return bar
-end
-
-function addon:CpgDetailProperty(name, parent)
-  local prop = CreateFrame("Frame", name, parent)
-  prop:SetWidth(parent:GetWidth())
-  prop:SetHeight(CT_THEME.CGP.DETAIL.PROP.HEIGHT)
-  prop:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-
-  prop.bg = prop:CreateTexture(nil, "BACKGROUND")
-  prop.bg:SetAllPoints()
-  -- if odd then
-  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
-  -- else
-  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
-  -- end
-
-  prop.text = prop:CreateFontString(nil, "OVERLAY")
-  prop.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
-  prop.text:SetPoint("LEFT", CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
-  prop.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.TEXT_COLOR))
-
-  prop.value = prop:CreateFontString(nil, "OVERLAY")
-  prop.value:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
-  prop.value:SetPoint("RIGHT", -CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
-  prop.value:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.VALUE_COLOR))
-
-  return prop
-end
-
-function addon:CreateCgp()
-  -- Make sure ONLY Create it once to avoid OOM
-  if self.CT_CGP then
-    return
-  end
-  --
-  local cgp = addon:CreateBaseWindow("CT_CHARACTER_GEAR_PANEL")
-  self.CT_CGP = cgp
-  cgp:Hide()
-
-  cgp:SetSize(CT_THEME.CGP.WIDTH, CT_THEME.CGP.HEIGHT)
-
-  local bg = cgp:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(unpack(CT_THEME.CGP.BG.COLOR))
-
-  local banner = addon:Util_CreateBanner(
-    "CT_CHARACTER_GEAR_PANEL_BANNER",
-    self.CT_CGP,
-    L["GEAR_DETAIL"],
-    CT_THEME.CGP.BANNER
-  )
-  self.CT_CGP_BANNER = banner
-
-  local content = CreateFrame("Frame", "CT_CHARACTER_GEAR_PANEL_CONTENT", self.CT_CGP, "BackdropTemplate")
-  self.CT_CGP_CONTENT = content
-  content:SetPoint("TOPLEFT", banner, "BOTTOMLEFT", 0, 0)
-  content:SetPoint("BOTTOMRIGHT", self.CT_CGP, "BOTTOMRIGHT", 0, 0)
-
-  content.slots = {}
-  local W = content:GetWidth()
-  local H = content:GetHeight()
-  local w = 48 -- 基础列宽
-  local h = 48 -- 基础行高
-  local spaceX = (W - (4 * w)) / 5
-  local spaceY = (H - (8 * h)) / 9
-
-  -- 巨型格子的左上角坐标，正好是（第2列的横向偏移，第1行的纵向偏移）
-  local bigOffsetX = (2 * spaceX) + ((2 - 1) * w)
-  local bigOffsetY = (1 * spaceY) + ((1 - 1) * h)
-
-  -- 巨型格子的宽度 = 2个列宽 + 中间夹着的那 1 个横向空白 (spaceX)
-  local detailWidth = (2 * w) + spaceX
-  -- 巨型格子的高度 = 7个行高 + 中间夹着的那 6 个纵向空白 (spaceY)
-  local detailHeight = (7 * h) + (6 * spaceY)
-
-  -- Name, item level bar, item level, prop bar, props, enhanced prop bar, enhanced props
-  local detail = CreateFrame("Frame", "CT_CHARACTER_GEAR_PANEL_DETAIL", content, "VerticalLayoutFrame")
-  self.CT_CGP_DETAIL = detail
-  detail:SetSize(detailWidth, detailHeight)
-  detail:SetPoint("TOPLEFT", content, "TOPLEFT", bigOffsetX, -bigOffsetY)
-
-  -- Player
-  detail.name = addon:CpgDetailHeadline(nil, detail)
-  detail.name.layoutIndex = 0
-
-  -- Equipped Level
-  detail.equippedLevelBar = addon:CpgDetailBar(nil, detail)
-  detail.equippedLevelBar.layoutIndex = 1
-  detail.equippedLevelBar.text:SetText("物品等级")
-
-  detail.equippedLevel = addon:CpgDetailHeadline(nil, detail)
-  detail.equippedLevel.layoutIndex = 2
-
-  -- Basic Stat
-  detail.basicStatBar = addon:CpgDetailBar(nil, detail)
-  detail.basicStatBar.layoutIndex = 3
-  detail.basicStatBar.text:SetText("属性")
-
-  detail.STRENGTH = addon:CpgDetailProperty(nil, detail)
-  detail.STRENGTH.layoutIndex = 31
-  detail.STRENGTH.text:SetText("力量")
-  detail.AGILITY = addon:CpgDetailProperty(nil, detail)
-  detail.AGILITY.layoutIndex = 32
-  detail.AGILITY.text:SetText("敏捷")
-  detail.INTELLECT = addon:CpgDetailProperty(nil, detail)
-  detail.INTELLECT.layoutIndex = 33
-  detail.INTELLECT.text:SetText("智力")
-
-  detail.STAMINA = addon:CpgDetailProperty(nil, detail)
-  detail.STAMINA.layoutIndex = 38
-  detail.STAMINA.text:SetText("耐力")
-
-  detail.ARMOR = addon:CpgDetailProperty(nil, detail)
-  detail.ARMOR.layoutIndex = 39
-  detail.ARMOR.text:SetText("护甲")
-
-  -- Secondary Stat
-  detail.secondaryStatsBar = addon:CpgDetailBar(nil, detail)
-  detail.secondaryStatsBar.layoutIndex = 40
-  detail.secondaryStatsBar.text:SetText("强化属性")
-
-  detail.CRITICAL_STRIKE = addon:CpgDetailProperty(nil, detail)
-  detail.CRITICAL_STRIKE.layoutIndex = 41
-  detail.CRITICAL_STRIKE.text:SetText("暴击")
-
-  detail.HASTE = addon:CpgDetailProperty(nil, detail)
-  detail.HASTE.layoutIndex = 42
-  detail.HASTE.text:SetText("急速")
-
-  detail.MASTERY = addon:CpgDetailProperty(nil, detail)
-  detail.MASTERY.layoutIndex = 43
-  detail.MASTERY.text:SetText("精通")
-
-  detail.VERSATILITY = addon:CpgDetailProperty(nil, detail)
-  detail.VERSATILITY.layoutIndex = 44
-  detail.VERSATILITY.text:SetText("全能")
-
-  detail.LIFESTEAL = addon:CpgDetailProperty(nil, detail)
-  detail.LIFESTEAL.layoutIndex = 45
-  detail.LIFESTEAL.text:SetText("吸血")
-
-  detail.SPEED = addon:CpgDetailProperty(nil, detail)
-  detail.SPEED.layoutIndex = 46
-  detail.SPEED.text:SetText("加速")
-
-  detail.AVOIDANCE = addon:CpgDetailProperty(nil, detail)
-  detail.AVOIDANCE.layoutIndex = 47
-  detail.AVOIDANCE.text:SetText("闪避")
-
-  detail.spec = addon:CpgDetailBar(nil, detail)
-  detail.spec.layoutIndex = 100
-
-  detail:Layout()
-  -- 将大格子挂载在你的索引结构里，方便以后调用它
-  content.detail = detail
-  -- ====================================================================
-  -- 生成常规小格子，并跳过合并区域
-  -- ====================================================================
-  for colIdx = 1, 4 do
-    local offsetX = (colIdx * spaceX) + ((colIdx - 1) * w)
-
-    for rowIdx = 1, 8 do
-      -- 如果是第2列 或 第3列，且行数在 1 到 7 之间，直接跳过不创建。
-      if (colIdx == 2 or colIdx == 3) and (rowIdx >= 1 and rowIdx <= 7) then
-        -- CONTINUE
-      else
-        -- 创建正常的独立小格子
-        -- local slot = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        local slot = CreateFrame("Button", nil, content, "BackdropTemplate")
-        slot:SetSize(w, h)
-
-        local offsetY = (rowIdx * spaceY) + ((rowIdx - 1) * h)
-        slot:SetPoint("TOPLEFT", content, "TOPLEFT", offsetX, -offsetY)
-
-        slot.icon = slot:CreateTexture(nil, "BACKGROUND")
-        slot.icon:SetAllPoints(slot)
-        slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
-
-        slot.quality = slot:CreateTexture(nil, "OVERLAY")
-        slot.quality:SetSize(unpack(CT_THEME.CGP.SLOT.QUALITY.SIZE))
-        slot.quality:SetPoint("TOPLEFT", slot, "TOPLEFT", unpack(CT_THEME.CGP.SLOT.QUALITY.POINT))
-        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
-
-        slot.itemLevel = slot:CreateFontString(nil, "OVERLAY")
-        slot.itemLevel:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.SLOT.ITEM_LEVEL.FONT])
-        slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
-        slot.itemLevel:SetPoint(
-          "BOTTOMRIGHT",
-          slot,
-          "BOTTOMRIGHT",
-          -CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING,
-          CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING
-        )
-        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        slot:SetScript("OnClick", function(self)
-          if self.itemLink and IsShiftKeyDown() then
-            local editBox = ChatEdit_GetActiveWindow()
-            if editBox then editBox:Insert(self.itemLink) end
+  if character.currencies and next(character.currencies) then
+    local hasAnyOutput = false
+    for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+      local cData = character.currencies[currencyID]
+      if cData then
+        hasAnyOutput = true
+        local iconStr = string.format("|T%d:14:14:0:0|t", cData.icon)
+        local leftColumn = string.format("%s  %s", iconStr, cData.name)
+        local qtyStr = string.format("|cffffffff%d|r", cData.quantity)
+        local weeklyStr = ""
+        if cData.maxWeeklyQuantity and cData.maxWeeklyQuantity > 0 then
+          weeklyStr = string.format(L["CURR_WEEKLY_LIMIT"], cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
+        end
+        if cData.maxQuantity and cData.maxQuantity > 0 then
+          if cData.totalEarned and cData.totalEarned > 0 then
+            weeklyStr = string.format(L["CURR_SEASON_LIMIT"], cData.totalEarned, cData.maxQuantity)
+          else
+            weeklyStr = string.format(L["CURR_LIMIT"], cData.quantity, cData.maxQuantity)
           end
-        end)
+        end
 
-        table.insert(content.slots, slot)
+        local rightColumn = qtyStr .. weeklyStr
+        GameTooltip:AddDoubleLine(leftColumn, rightColumn, 1, 1, 1, 1, 1, 1)
       end
     end
-  end
-end
 
-function addon:ShowCgp(id)
-  addon:CreateCgp()
-  local character = CharactersTrackerDB.CHARACTERS[id]
-  if not character or not character.name then return end
-
-  local detail = self.CT_CGP_DETAIL
-
-  detail.name.text:SetText(FORMATTERS.NAME(character))
-  detail.equippedLevel.text:SetText(string.format("%d", character.equippedLevel or 0))
-
-  local stats = character.stats or {}
-  local effected = 0
-  for _, k in ipairs(BASIC_STATS_LAYOUT) do
-    local stat = stats.basic[k]
-    if stat and stat > 0 then
-      detail[k].value:SetText(stat)
-      if bit.band(effected, 1) == 0 then
-        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
-      else
-        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
-      end
-      effected = effected + 1
-    else
-      detail[k]:Hide()
+    if not hasAnyOutput then
+      GameTooltip:AddLine(L["CURR_TIP_L1"], 0.5, 0.5, 0.5)
+      GameTooltip:AddLine(L["CURR_TIP_L2"], 0.5, 0.5, 0.5)
     end
+  else
+    GameTooltip:AddLine(L["CURR_TIP_L1"], 0.5, 0.5, 0.5)
+    GameTooltip:AddLine(L["CURR_TIP_L2"], 0.5, 0.5, 0.5)
   end
 
-  effected = 0
-  for _, k in ipairs(SECONDARY_STATS_LAYOUT) do
-    local stat = stats.secondary[k]
-    if stat and stat > 0 then
-      detail[k].value:SetText(string.format("%.2f%%", stat))
-      if bit.band(effected, 1) == 0 then
-        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
-      else
-        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
-      end
-      effected = effected + 1
-    else
-      detail[k]:Hide()
-    end
-  end
-
-  if stats.specialization then
-    detail.spec.text:SetText(FORMATTERS.CLASS_COLOR(character, stats.specialization))
-  end
-
-  detail:Layout()
-
-  local content = self.CT_CGP_CONTENT
-  for idx, _ in ipairs(content.slots) do
-    local slotId = GEAR_SLOTS_MAPPING[idx]
-
-    local slot = content.slots[idx]
-    local gear = character.gear[slotId]
-
-    if gear and gear.link then
-      local texture = C_Item.GetItemIconByID(gear.link)
-      local quality = C_Item.GetItemQualityByID(gear.link)
-      slot.icon:SetTexture(texture or 134400)
-      slot.itemLink = gear.link
-
-      if quality and quality > 1 then
-        local r, g, b = C_Item.GetItemQualityColor(quality)
-        slot.quality:SetColorTexture(r, g, b)
-      else
-        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
-      end
-      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
-      slot.itemLevel:SetText(gear.level or "")
-
-      slot:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetHyperlink(self.itemLink)
-        GameTooltip:Show()
-      end)
-    else
-      slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
-      slot.itemLink = nil
-      slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
-      slot.quality:Hide()
-      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
-      slot.itemLevel:SetText("")
-      slot:SetScript("OnEnter", nil)
-    end
-  end
-  self.CT_CGP:Show()
+  GameTooltip:Show()
 end
 
 -- ==========================================
@@ -1534,6 +1296,360 @@ function addon:ClpMiniMain()
 
   RearrangeCharacterButtons()
   MainFrame:Show()
+end
+
+-- ==========================================
+-- Characters Gear Detail
+-- ==========================================
+function addon:CpgDetailHeadline(name, parent)
+  local container = CreateFrame("Frame", name, parent)
+  container:SetWidth(parent:GetWidth())
+  container:SetHeight(CT_THEME.CGP.DETAIL.HEADLINE.HEIGHT)
+  container:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+
+  container.text = container:CreateFontString(nil, "OVERLAY")
+  container.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.HEADLINE.FONT])
+  container.text:SetPoint("CENTER")
+  return container
+end
+
+function addon:CpgDetailBar(name, parent)
+  local bar = CreateFrame("Frame", name, parent)
+  bar:SetWidth(parent:GetWidth())
+  bar:SetHeight(CT_THEME.CGP.DETAIL.BAR.HEIGHT)
+  bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+
+  bar.bg = bar:CreateTexture(nil, "BACKGROUND")
+  bar.bg:SetAllPoints()
+  bar.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.BG.COLOR))
+
+  bar.line = bar:CreateTexture(nil, "OVERLAY")
+  bar.line:SetHeight(CT_THEME.CGP.DETAIL.BAR.LINE.HEIGHT)
+  bar.line:SetPoint("BOTTOMLEFT", bar, "BOTTOMLEFT", 0, 0)
+  bar.line:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 0, 0)
+  bar.line:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.BAR.LINE.COLOR))
+
+  bar.text = bar:CreateFontString(nil, "OVERLAY")
+  bar.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.BAR.TITLE.FONT])
+  bar.text:SetPoint("CENTER")
+  bar.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.BAR.TITLE.COLOR))
+
+  return bar
+end
+
+function addon:CpgDetailProperty(name, parent)
+  local prop = CreateFrame("Frame", name, parent)
+  prop:SetWidth(parent:GetWidth())
+  prop:SetHeight(CT_THEME.CGP.DETAIL.PROP.HEIGHT)
+  prop:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+
+  prop.bg = prop:CreateTexture(nil, "BACKGROUND")
+  prop.bg:SetAllPoints()
+  -- if odd then
+  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+  -- else
+  --   prop.bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+  -- end
+
+  prop.text = prop:CreateFontString(nil, "OVERLAY")
+  prop.text:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
+  prop.text:SetPoint("LEFT", CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
+  prop.text:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.TEXT_COLOR))
+
+  prop.value = prop:CreateFontString(nil, "OVERLAY")
+  prop.value:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.DETAIL.PROP.FONT])
+  prop.value:SetPoint("RIGHT", -CT_THEME.CGP.DETAIL.PROP.PADDING, 0)
+  prop.value:SetTextColor(unpack(CT_THEME.CGP.DETAIL.PROP.VALUE_COLOR))
+
+  return prop
+end
+
+function addon:CreateCgp()
+  -- Make sure ONLY Create it once to avoid OOM
+  if self.CT_CGP then
+    return
+  end
+  --
+  local cgp = addon:Util_CreateBaseWindow("CT_CHARACTER_GEAR_PANEL", self.CT_CLP)
+  self.CT_CGP = cgp
+  cgp:Hide()
+
+  cgp:SetFrameStrata("DIALOG")
+  cgp:SetSize(CT_THEME.CGP.WIDTH, CT_THEME.CGP.HEIGHT)
+
+  local bg = cgp:CreateTexture(nil, "BACKGROUND")
+  bg:SetAllPoints()
+  bg:SetColorTexture(unpack(CT_THEME.CGP.BG.COLOR))
+
+  local banner = addon:Util_CreateBanner(
+    "CT_CHARACTER_GEAR_PANEL_BANNER",
+    self.CT_CGP,
+    L["CGP_BANNER"],
+    CT_THEME.CGP.BANNER
+  )
+  self.CT_CGP_BANNER = banner
+
+  local content = CreateFrame("Frame", "CT_CHARACTER_GEAR_PANEL_CONTENT", self.CT_CGP, "BackdropTemplate")
+  self.CT_CGP_CONTENT = content
+  content:SetPoint("TOPLEFT", banner, "BOTTOMLEFT", 0, 0)
+  content:SetPoint("BOTTOMRIGHT", self.CT_CGP, "BOTTOMRIGHT", 0, 0)
+
+  content.slots = {}
+  local W = content:GetWidth()
+  local H = content:GetHeight()
+  local w = 48 -- 基础列宽
+  local h = 48 -- 基础行高
+  local spaceX = (W - (4 * w)) / 5
+  local spaceY = (H - (8 * h)) / 9
+
+  -- 巨型格子的左上角坐标，正好是（第2列的横向偏移，第1行的纵向偏移）
+  local bigOffsetX = (2 * spaceX) + ((2 - 1) * w)
+  local bigOffsetY = (1 * spaceY) + ((1 - 1) * h)
+
+  -- 巨型格子的宽度 = 2个列宽 + 中间夹着的那 1 个横向空白 (spaceX)
+  local detailWidth = (2 * w) + spaceX
+  -- 巨型格子的高度 = 7个行高 + 中间夹着的那 6 个纵向空白 (spaceY)
+  local detailHeight = (7 * h) + (6 * spaceY)
+
+  -- Name, item level bar, item level, prop bar, props, enhanced prop bar, enhanced props
+  local detail = CreateFrame("Frame", "CT_CHARACTER_GEAR_PANEL_DETAIL", content, "VerticalLayoutFrame")
+  self.CT_CGP_DETAIL = detail
+  detail:SetSize(detailWidth, detailHeight)
+  detail:SetPoint("TOPLEFT", content, "TOPLEFT", bigOffsetX, -bigOffsetY)
+
+  -- Player
+  detail.name = addon:CpgDetailHeadline(nil, detail)
+  detail.name.layoutIndex = 0
+
+  -- Equipped Level
+  detail.equippedLevelBar = addon:CpgDetailBar(nil, detail)
+  detail.equippedLevelBar.layoutIndex = 1
+  detail.equippedLevelBar.text:SetText(L["CGP_ITEM_LEVEL"])
+
+  detail.equippedLevel = addon:CpgDetailHeadline(nil, detail)
+  detail.equippedLevel.layoutIndex = 2
+
+  -- Basic Stat
+  detail.basicStatBar = addon:CpgDetailBar(nil, detail)
+  detail.basicStatBar.layoutIndex = 3
+  detail.basicStatBar.text:SetText(L["CGP_ATTRIBUTES"])
+
+  detail.STRENGTH = addon:CpgDetailProperty(nil, detail)
+  detail.STRENGTH.layoutIndex = 31
+  detail.STRENGTH.text:SetText(L["CGP_STAT_STRENGTH"])
+  detail.AGILITY = addon:CpgDetailProperty(nil, detail)
+  detail.AGILITY.layoutIndex = 32
+  detail.AGILITY.text:SetText(L["CGP_STAT_AGILITY"])
+  detail.INTELLECT = addon:CpgDetailProperty(nil, detail)
+  detail.INTELLECT.layoutIndex = 33
+  detail.INTELLECT.text:SetText(L["CGP_STAT_INTELLECT"])
+
+  detail.STAMINA = addon:CpgDetailProperty(nil, detail)
+  detail.STAMINA.layoutIndex = 38
+  detail.STAMINA.text:SetText(L["CGP_STAT_STAMINA"])
+
+  detail.ARMOR = addon:CpgDetailProperty(nil, detail)
+  detail.ARMOR.layoutIndex = 39
+  detail.ARMOR.text:SetText(L["CGP_STAT_ARMOR"])
+
+  -- Secondary Stat
+  detail.secondaryStatsBar = addon:CpgDetailBar(nil, detail)
+  detail.secondaryStatsBar.layoutIndex = 40
+  detail.secondaryStatsBar.text:SetText(L["CGP_ENHANCEMENTS"])
+
+  detail.CRITICAL_STRIKE = addon:CpgDetailProperty(nil, detail)
+  detail.CRITICAL_STRIKE.layoutIndex = 41
+  detail.CRITICAL_STRIKE.text:SetText(L["CGP_STAT_CRITICAL_STRIKE"])
+
+  detail.HASTE = addon:CpgDetailProperty(nil, detail)
+  detail.HASTE.layoutIndex = 42
+  detail.HASTE.text:SetText(L["CGP_STAT_HASTE"])
+
+  detail.MASTERY = addon:CpgDetailProperty(nil, detail)
+  detail.MASTERY.layoutIndex = 43
+  detail.MASTERY.text:SetText(L["CGP_STAT_MASTERY"])
+
+  detail.VERSATILITY = addon:CpgDetailProperty(nil, detail)
+  detail.VERSATILITY.layoutIndex = 44
+  detail.VERSATILITY.text:SetText(L["CGP_STAT_VERSATILITY"])
+
+  detail.LIFESTEAL = addon:CpgDetailProperty(nil, detail)
+  detail.LIFESTEAL.layoutIndex = 45
+  detail.LIFESTEAL.text:SetText(L["CGP_STAT_LIFESTEAL"])
+
+  detail.SPEED = addon:CpgDetailProperty(nil, detail)
+  detail.SPEED.layoutIndex = 46
+  detail.SPEED.text:SetText(L["CGP_STAT_SPEED"])
+
+  detail.AVOIDANCE = addon:CpgDetailProperty(nil, detail)
+  detail.AVOIDANCE.layoutIndex = 47
+  detail.AVOIDANCE.text:SetText(L["CGP_STAT_AVOIDANCE"])
+
+  detail.spec = addon:CpgDetailBar(nil, detail)
+  detail.spec.layoutIndex = 100
+
+  detail:Layout()
+  -- 将大格子挂载在你的索引结构里，方便以后调用它
+  content.detail = detail
+  -- ====================================================================
+  -- 生成常规小格子，并跳过合并区域
+  -- ====================================================================
+  for colIdx = 1, 4 do
+    local offsetX = (colIdx * spaceX) + ((colIdx - 1) * w)
+
+    for rowIdx = 1, 8 do
+      -- 如果是第2列 或 第3列，且行数在 1 到 7 之间，直接跳过不创建。
+      if (colIdx == 2 or colIdx == 3) and (rowIdx >= 1 and rowIdx <= 7) then
+        -- CONTINUE
+      else
+        -- 创建正常的独立小格子
+        -- local slot = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        local slot = CreateFrame("Button", nil, content, "BackdropTemplate")
+        slot:SetSize(w, h)
+
+        local offsetY = (rowIdx * spaceY) + ((rowIdx - 1) * h)
+        slot:SetPoint("TOPLEFT", content, "TOPLEFT", offsetX, -offsetY)
+
+        slot.icon = slot:CreateTexture(nil, "BACKGROUND")
+        slot.icon:SetAllPoints(slot)
+        slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
+
+        slot.quality = slot:CreateTexture(nil, "OVERLAY")
+        slot.quality:SetSize(unpack(CT_THEME.CGP.SLOT.QUALITY.SIZE))
+        slot.quality:SetPoint("TOPLEFT", slot, "TOPLEFT", unpack(CT_THEME.CGP.SLOT.QUALITY.POINT))
+        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+
+        slot.itemLevel = slot:CreateFontString(nil, "OVERLAY")
+        slot.itemLevel:SetFontObject(self.GUI_FONTS[CT_THEME.CGP.SLOT.ITEM_LEVEL.FONT])
+        slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+        slot.itemLevel:SetPoint(
+          "BOTTOMRIGHT",
+          slot,
+          "BOTTOMRIGHT",
+          -CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING,
+          CT_THEME.CGP.SLOT.ITEM_LEVEL.PADDING
+        )
+        slot:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        slot:SetScript("OnClick", function(self)
+          if self.itemLink and IsShiftKeyDown() then
+            local editBox = ChatEdit_GetActiveWindow()
+            if editBox then editBox:Insert(self.itemLink) end
+          end
+        end)
+
+        table.insert(content.slots, slot)
+      end
+    end
+  end
+end
+
+function addon:ShowCgp(id)
+  addon:CreateCgp()
+  local character = CharactersTrackerDB.CHARACTERS[id]
+  if not character or not character.name then return end
+
+  self.CT_CGP:Hide()
+  local detail = self.CT_CGP_DETAIL
+
+  detail.name.text:SetText(FORMATTERS.NAME(character))
+  detail.equippedLevel.text:SetText(FORMATTERS.ITEM_LEVEL_FLOOR(character))
+
+  local stats = character.stats or { basic = {}, secondary = {} }
+  local effected = 0
+  for _, k in ipairs(BASIC_STATS_LAYOUT) do
+    local stat = stats.basic[k]
+    if "number" == type(stat) and stat > 0 then
+      detail[k].value:SetText(stat)
+      if bit.band(effected, 1) == 0 then
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+      else
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+      end
+      detail[k]:Show()
+      effected = effected + 1
+    else
+      detail[k]:Hide()
+    end
+  end
+
+  if effected > 0 then
+    detail.basicStatBar:Show()
+  else
+    detail.basicStatBar:Hide()
+  end
+
+  effected = 0
+  for _, k in ipairs(SECONDARY_STATS_LAYOUT) do
+    local stat = stats.secondary[k]
+    if "number" == type(stat) and stat > 0 then
+      detail[k].value:SetText(string.format("%.2f%%", stat))
+      if bit.band(effected, 1) == 0 then
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.EVEN))
+      else
+        detail[k].bg:SetColorTexture(unpack(CT_THEME.CGP.DETAIL.PROP.BG.ODD))
+      end
+      detail[k]:Show()
+      effected = effected + 1
+    else
+      detail[k]:Hide()
+    end
+  end
+
+  if effected > 0 then
+    detail.secondaryStatsBar:Show()
+  else
+    detail.secondaryStatsBar:Hide()
+  end
+
+  if stats.specialization then
+    detail.spec.text:SetText(FORMATTERS.CLASS_COLOR(character, stats.specialization))
+    detail.spec:Show()
+  else
+    detail.spec.text:SetText("")
+    detail.spec:Hide()
+  end
+
+  detail:Layout()
+
+  local content = self.CT_CGP_CONTENT
+  for idx, _ in ipairs(content.slots) do
+    local slotId = GEAR_SLOTS_MAPPING[idx]
+
+    local slot = content.slots[idx]
+    local gear = character.gear[slotId]
+
+    if gear and gear.link then
+      local texture = C_Item.GetItemIconByID(gear.link)
+      slot.icon:SetTexture(texture or 134400)
+      slot.itemLink = gear.link
+
+      local quality = C_Item.GetItemQualityByID(gear.link)
+      if quality and quality > 1 then
+        local r, g, b = C_Item.GetItemQualityColor(quality)
+        slot.quality:SetColorTexture(r, g, b, 1)
+      else
+        slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+      end
+      slot.quality:Show()
+      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+      slot.itemLevel:SetText(gear.level or "")
+
+      slot:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetHyperlink(self.itemLink)
+        GameTooltip:Show()
+      end)
+    else
+      slot.icon:SetColorTexture(unpack(CT_THEME.CGP.SLOT.ICON.COLOR))
+      slot.itemLink = nil
+      slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+      slot.quality:Hide()
+      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+      slot.itemLevel:SetText("")
+      slot:SetScript("OnEnter", nil)
+    end
+  end
+  self.CT_CGP:Show()
 end
 
 -- addon:X()

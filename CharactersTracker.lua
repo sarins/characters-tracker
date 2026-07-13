@@ -68,20 +68,6 @@ local function DP(...)
   end
 end
 
--- local frame = CreateFrame("Frame")
--- frame:RegisterEvent("TIME_PLAYED_MSG")
--- frame:SetScript("OnEvent", function(self, event, totalTime, levelTime)
---     -- totalTime: 总游戏时间（秒）
---     -- levelTime: 当前等级消耗的时间（秒）
---     print(string.format("总时长: %.2f 小时", totalTime / 3600))
---     print(string.format("当前等级时长: %.2f 小时", levelTime / 3600))
-
---     self:UnregisterEvent("TIME_PLAYED_MSG") -- 拿到后注销，避免频繁触发
--- end)
-
--- -- 主动向服务器发起查询请求
--- RequestTimePlayed()
-
 local function DbCheck()
   if not CharactersTrackerDB then
     CharactersTrackerDB = {
@@ -119,7 +105,8 @@ local function InitCharacterCache()
   character.gear = character.gear or {}
   character.vault = character.vault or {}
   character.bags = character.bags or {}
-  character.currencies = {}
+  character.currencies = character.currencies or {}
+  character.stats = character.stats or { basic = {}, secondary = {} }
   character.updated = time()
   CharactersTrackerDB.CHARACTERS[guid] = character
 end
@@ -1373,7 +1360,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
   elseif event == "WEEKLY_REWARDS_UPDATE" then
     C_Timer.After(1.5, function() ScanCharacterRewards() end)
   elseif event == "PLAYER_EQUIPMENT_CHANGED" then
-    C_Timer.After(1.5, function() ScanCharacterGears() end)
+    C_Timer.After(1.5, function()
+      ScanCharacterGears()
+      ScanCharacterStats()
+    end)
   elseif event == "CURRENCY_DISPLAY_UPDATE" then
     ScanCharacterCurrencies()
   elseif event == "CHALLENGE_MODE_MAPS_UPDATE" then
@@ -1406,12 +1396,18 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
             c.level = UnitLevel("player")
           end
         )
+        ScanCharacterStats()
       end
     )
   elseif event == "PLAYER_LOGOUT" then
     DP(event)
     -- TODO
+  elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
+    C_Timer.After(1.5, function()
+      ScanCharacterStats()
+    end)
   elseif event == "PLAYER_ENTERING_WORLD" then
+    InitCharacterCache()
     -- ==========================================
     -- Try to Triggering weekly rewards notify.
     -- ==========================================
@@ -1421,6 +1417,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     C_Timer.After(1.5, function()
       ScanCharacterGears()
       ScanCharacterRewards()
+      ScanCharacterStats()
     end)
     CreateFloatingButton()
   end
