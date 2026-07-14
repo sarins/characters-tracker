@@ -41,6 +41,14 @@ local TRACKED_CURRENCIES = {
 }
 local TRACKED_CURRENCIES_CACHE = {}
 
+local COLORS = {
+  PROGRESS = {
+    DONE = "22C55E",
+    UNLOCKED = "EAB308",
+    LOCKED = "FFFFFF",
+  }
+}
+
 StaticPopupDialogs["CONFIRM_PURE_CHARACTER_DATA"] = {
   text = L["CT_CONFIRM_REMOVE_CHARACTER_DATA"],
   button1 = L["CT_CONFIRM_Y"],
@@ -65,9 +73,17 @@ end
 
 -- /dump C_ChallengeMode.GetMapUIInfo(161)
 
-local function VAULT_PROGRESS(c, type)
-  if c and type and "table" == type(c.vault) and c.vault[type] then
-    local vault = c.vault[type]
+local function VAULTS_PROGRESS(c, t)
+  if c and t and "table" == type(c.vaults) and "table" == type(c.vaults.rewards) then
+    local progress = c.vaults.rewards[t] or 0
+    local target = 3
+    if progress < 1 then
+      return string.format("|cff%s%s / %s|r", COLORS.PROGRESS.LOCKED, math.abs(progress), target)
+    elseif progress > 2 then
+      return string.format("|cff%s%s / %s|r", COLORS.PROGRESS.DONE, progress, target)
+    else
+      return string.format("|cff%s%s / %s|r", COLORS.PROGRESS.UNLOCKED, progress, target)
+    end
   end
   return ""
 end
@@ -142,7 +158,14 @@ local FORMATTERS = {
   ITEM_LEVEL = function(c)
     return c and c.equippedLevel or 0
   end,
-  VAULT = function(c)
+  RV = function(c)
+    return VAULTS_PROGRESS(c, 3)
+  end,
+  DV = function(c)
+    return VAULTS_PROGRESS(c, 1)
+  end,
+  WV = function(c)
+    return VAULTS_PROGRESS(c, 6)
   end,
   M_SCORE = function(c)
     return string.format("%d", c and c.mScore or 0)
@@ -441,9 +464,9 @@ local META = {
       { id = "FACTION",    label = L["CLP_LABEL_FACTION"],    formatter = FORMATTERS.FACTION,          fixed = false, align = "CENTER" },
       { id = "ZONE",       label = L["CLP_LABEL_ZONE"],       formatter = FORMATTERS.ZONE,             fixed = false, align = "CENTER" },
       { id = "ITEM_LEVEL", label = L["CLP_LABEL_ITEM_LEVEL"], formatter = FORMATTERS.ITEM_LEVEL_FLOOR, fixed = false, align = "CENTER" },
-      { id = "RV",         label = L["CLP_LABEL_RV"],         formatter = "",                          fixed = false, align = "CENTER" },
-      { id = "DV",         label = L["CLP_LABEL_DV"],         formatter = "",                          fixed = false, align = "CENTER" },
-      { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = "",                          fixed = false, align = "CENTER" },
+      { id = "RV",         label = L["CLP_LABEL_RV"],         formatter = FORMATTERS.RV,               fixed = false, align = "CENTER" },
+      { id = "DV",         label = L["CLP_LABEL_DV"],         formatter = FORMATTERS.DV,               fixed = false, align = "CENTER" },
+      { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = FORMATTERS.WV,               fixed = false, align = "CENTER" },
       { id = "M_SCORE",    label = L["CLP_LABEL_M_SCORE"],    formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
       { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
       { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
@@ -1010,7 +1033,6 @@ function addon:ClpRefreshGrid()
   addon:ClpRefreshGridHeader()
 
   local widths = self.CT_CLP_STATUS.widths
-  local hiddenColumns = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_COLUMNS
   local hiddenCharacters = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CHARACTERS
   local font = self.GUI_FONTS["SMALL"]
   local rows = self.CT_CLP_STATUS.rows
@@ -1092,8 +1114,8 @@ function addon:ClpRefreshGrid()
             end
             cell:SetSize(widths[meta.id], CT_THEME.CLP.GRID.ROW.HEIGHT)
             cell.currencies:SetPoint("CENTER")
-            cell.currencies:SetScript("OnEnter", function(self)
-              addon:ShowCurrenciesTooltip(self, character)
+            cell.currencies:SetScript("OnEnter", function(_self)
+              addon:ShowCurrenciesTooltip(_self, character)
             end)
             cell.currencies:SetScript("OnLeave", function()
               GameTooltip:Hide()
@@ -1135,10 +1157,25 @@ function addon:ClpRefreshGrid()
             end
             if "NAME" == meta.id then
               cell:EnableMouse(true)
-              cell:SetScript("OnMouseDown", function(self, button)
+              cell:SetScript("OnMouseDown", function(_self, button)
                 if button == "LeftButton" then
                   addon:ShowCgp(_rid)
                 end
+              end)
+            end
+            if "RV" == meta.id or "DV" == meta.id or "WV" == meta.id then
+              cell:EnableMouse(true)
+              cell:SetScript("OnEnter", function(_self)
+                if "RV" == meta.id then
+                  addon:ShowVaultsTooltip(_self, character, 3, meta.label)
+                elseif "DV" == meta.id then
+                  addon:ShowVaultsTooltip(_self, character, 1, meta.label)
+                else
+                  addon:ShowVaultsTooltip(_self, character, 6, meta.label)
+                end
+              end)
+              cell:SetScript("OnLeave", function()
+                GameTooltip:Hide()
               end)
             end
             cell:Show()
@@ -1243,6 +1280,38 @@ function addon:ShowCurrenciesTooltip(anchor, character)
     GameTooltip:AddLine(L["CURR_TIP_L2"], 0.5, 0.5, 0.5)
   end
 
+  GameTooltip:Show()
+end
+
+-- ==========================================
+-- Vaults Tooltip
+-- ==========================================
+function addon:ShowVaultsTooltip(anchor, character, t, label)
+  if not anchor or not character or not character.vaults then return end
+
+  GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+
+  GameTooltip:AddLine(FORMATTERS.NAME(character))
+  GameTooltip:AddLine(label)
+
+  local activities = character.vaults.activities and character.vaults.activities[t] or {}
+
+  for _, slot in ipairs(activities) do
+    if "table" == type(slot) then
+      if slot.progress >= slot.threshold then
+        local left = string.format(L["VT_LEVEL"], slot.level)
+        local right = string.format("|cff%s(%s/%s)|r", COLORS.PROGRESS.DONE, slot.threshold, slot.threshold)
+        GameTooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
+      elseif slot.progress < 1 then
+        local right = string.format("(%d/%d)", math.abs(slot.progress), slot.threshold)
+        GameTooltip:AddDoubleLine(L["VT_LOCKED"], right, 1, 1, 1, 1, 1, 1)
+      else
+        local right = string.format("|cff%s(%s/%s)|r", COLORS.PROGRESS.UNLOCKED, slot.progress, slot.threshold)
+        GameTooltip:AddDoubleLine(L["VT_LOCKED"], right, 1, 1, 1, 1, 1, 1)
+      end
+    end
+  end
   GameTooltip:Show()
 end
 
