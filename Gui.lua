@@ -11,14 +11,6 @@ local L = CharactersTracker_Locale
 -- CGP = Character Gear Panel
 -- ====================================================================
 
--- ITEM_QUALITY_COLORS[0].color ：垃圾灰（适合做离线很久、或者未激活的号）。
--- ITEM_QUALITY_COLORS[2].color ：优秀绿（适合做正常、安全的指标）。
--- ITEM_QUALITY_COLORS[3].color ：精良蓝（适合做高亮）。
--- ITEM_QUALITY_COLORS[4].color ：史诗紫（适合做满级、或者大米高分数的号）。
--- ITEM_QUALITY_COLORS[5].color ：传说橙（适合做最核心、最显眼的数据）。
-
--- /dump x = ITEM_QUALITY_COLORS[3].color:GenerateHexColorString()
-
 local MAX_LEVEL_OF_CHARACTER = GetMaxLevelForPlayerExpansion()
 
 local BASIC_STATS_LAYOUT = { "STRENGTH", "AGILITY", "INTELLECT", "STAMINA", "ARMOR" }
@@ -47,6 +39,7 @@ local TRACKED_CURRENCIES = {
   1792, -- 荣誉点数
   1602, -- 征服点数
 }
+local TRACKED_CURRENCIES_CACHE = {}
 
 StaticPopupDialogs["CONFIRM_PURE_CHARACTER_DATA"] = {
   text = L["CT_CONFIRM_REMOVE_CHARACTER_DATA"],
@@ -66,6 +59,15 @@ local function S2TA(c, f)
       return "< 1m"
     end
     return string.format(SecondsToTimeAbbrev(delta))
+  end
+  return ""
+end
+
+-- /dump C_ChallengeMode.GetMapUIInfo(161)
+
+local function VAULT_PROGRESS(c, type)
+  if c and type and "table" == type(c.vault) and c.vault[type] then
+    local vault = c.vault[type]
   end
   return ""
 end
@@ -94,7 +96,10 @@ local FORMATTERS = {
     return ""
   end,
   REALM = function(c)
-    return c and c.realm or ""
+    if c and c.realm then
+      return string.format("|cffffd100%s|r", c.realm)
+    end
+    return ""
   end,
   LEVEL = function(c)
     if c and c.level and c.level > 0 then
@@ -162,7 +167,6 @@ local FORMATTERS = {
 }
 
 local CT_THEME = {
-  -- 1. 主窗体 (Main Frame) 尺寸与颜色
   FONTS = {
     TTF      = "Interface\\AddOns\\CharactersTracker\\font\\MicrosoftYaHeiUI-02.ttf",
     SETTINGS = {
@@ -175,8 +179,15 @@ local CT_THEME = {
       HUGE       = { 22, "OUTLINE" },
     },
   },
+  FB = {
+    SIZE = { 36, 36 },
+    ICON = {
+      TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\icon.tga",
+      SIZE = { 32, 32 },
+    },
+  },
   CLP = {
-    HEIGHT             = 600,
+    HEIGHT             = 400,
     SCROLL_BAR_PADDING = 23,
     BG                 = {
       COLOR = { 0.08, 0.09, 0.11, 0.95 },
@@ -205,7 +216,7 @@ local CT_THEME = {
         SIZE = { 16, 16 },
         POINT = { -136, 0 }
       },
-      COLUMNS = {
+      CURRENCIES = {
         TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\detail.tga",
         SIZE = { 16, 16 },
         POINT = { -112, 0 }
@@ -295,6 +306,10 @@ local CT_THEME = {
           CHECKED_COLOR   = { 0.20, 0.75, 0.40, 1.00 }, -- 已勾选绿
           UNCHECKED_COLOR = { 0.25, 0.25, 0.25, 1.00 }, -- 未勾选灰
         },
+        ICON    = {
+          SIZE = { 14, 14 },
+          SPACING = 2,
+        },
         TEXT    = {
           CHECKED_COLOR = { 0.9, 0.9, 0.9 },
           UNCHECKED_COLOR = { 0.5, 0.5, 0.5 },
@@ -382,14 +397,44 @@ local CT_THEME = {
       }
     }
   },
-  CGP2 = {},
+  INVENTORY_PANEL = {
+    WIDTH  = 640,
+    HEIGHT = 560,
+    BG     = {
+      COLOR = { 0.08, 0.09, 0.11, 0.95 },
+    },
+    BANNER = {
+      HEIGHT = 32,
+      BG = {
+        COLOR = { 0.04, 0.05, 0.06, 0.95 },
+      },
+      LINE = {
+        HEIGHT = 1,
+        COLOR = { 0.16, 0.18, 0.22, 1.00 },
+      },
+      ICON = {
+        TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\icon.tga",
+        SIZE = { 24, 24 },
+        POINT = { 8, 0 },
+      },
+      TITLE = {
+        COLOR = { 1.0, 0.82, 0.0 },
+        POINT = { 36, 0 }
+      },
+      CLOSE = {
+        TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\close.tga",
+        SIZE = { 24, 24 },
+        POINT = { -8, 0 }
+      },
+    },
+  },
 }
 
 local META = {
   CLP = {
     COLS = {
       { id = "VISIBLE",    label = L["CLP_LABEL_VISIBLE"],    formatter = "",                          fixed = true,  align = "CENTER", width = 80 },
-      { id = "NAME",       label = L["CLP_LABEL_NAME"],       formatter = FORMATTERS.NAME,             fixed = true,  align = "CENTER" },
+      { id = "NAME",       label = L["CLP_LABEL_NAME"],       formatter = FORMATTERS.NAME,             fixed = true,  align = "LEFT",   padding = 16 },
       { id = "CLASS",      label = L["CLP_LABEL_CLASS"],      formatter = FORMATTERS.CLASS,            fixed = false, align = "CENTER" },
       { id = "REALM",      label = L["CLP_LABEL_REALM"],      formatter = FORMATTERS.REALM,            fixed = false, align = "CENTER" },
       { id = "LEVEL",      label = L["CLP_LABEL_LEVEL"],      formatter = FORMATTERS.LEVEL,            fixed = false, align = "CENTER" },
@@ -401,7 +446,7 @@ local META = {
       { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = "",                          fixed = false, align = "CENTER" },
       { id = "M_SCORE",    label = L["CLP_LABEL_M_SCORE"],    formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
       { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
-      { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT" },
+      { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
       { id = "CURRENCIES", label = L["CLP_LABEL_CURRENCIES"], formatter = "",                          fixed = false, align = "CENTER", width = 64 },
       { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = "",                          fixed = false, align = "CENTER" },
       { id = "UPDATED",    label = L["CLP_LABEL_UPDATED"],    formatter = FORMATTERS.UPDATED2TA,       fixed = false, align = "CENTER" },
@@ -414,6 +459,7 @@ function addon:X()
   print("Gui X() calling...")
 end
 
+-- stage 1 init, not sure for player has load
 function addon:InitWorkspace()
   self.GUI_FONTS = {}
   self.GUI_FONTS_MEASURMENT = {}
@@ -436,10 +482,19 @@ function addon:InitWorkspace()
   end
 end
 
--- function addon:Util_FrameMarginAll(child, parent, margin)
---   child:SetPoint("TOPLEFT", parent, "TOPLEFT", margin, -margin)
---   child:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -margin, margin)
--- end
+-- stage 2 init, the player has been entering into the world.
+function addon:InitEnteringWorld()
+  -- Cache the currencies name and icon for the dropdown menu
+  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+    local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
+    if info then
+      TRACKED_CURRENCIES_CACHE[currencyID] = {
+        name = info.name,
+        icon = info.iconFileID,
+      }
+    end
+  end
+end
 
 -- Base moveable window factory
 function addon:Util_CreateBaseWindow(name, parent)
@@ -506,11 +561,11 @@ function addon:Util_CreateBanner(name, parent, title, theme)
 end
 
 -- Dropdown menu
-function addon:HideAllMenus()
-  if self.L1Menu then self.L1Menu:Hide() end
-  if self.L2Menu then self.L2Menu:Hide() end
-  self:CancelMenuDimissTimer()
-end
+-- function addon:HideAllMenus()
+--   if self.L1Menu then self.L1Menu:Hide() end
+--   if self.L2Menu then self.L2Menu:Hide() end
+--   -- self:CancelMenuDimissTimer()
+-- end
 
 function addon:PureCharacterData(character)
   -- TODO delete
@@ -519,29 +574,33 @@ function addon:PureCharacterData(character)
 end
 
 -- 智能缓冲器：当鼠标离开菜单群落后，提供 0.2 秒的缓冲期防止滑出误触闭合
-function addon:StartMenuDismissTimer(target)
-  if not self.DismissTimerFrame then
-    self.DismissTimerFrame = CreateFrame("Frame")
+function addon:StartMenuDismissTimer(button)
+  local k = button:GetName()
+  if not self.CT_CLP_STATUS.dismissers[k] then
+    self.CT_CLP_STATUS.dismissers[k] = CreateFrame("Frame")
   end
+
+  local dissmisser = self.CT_CLP_STATUS.dismissers[k]
   local elapsed = 0
-  self.DismissTimerFrame:SetScript("OnUpdate", function(_, delta)
+  dissmisser:SetScript("OnUpdate", function(_, delta)
     elapsed = elapsed + delta
     if elapsed >= 0.2 then
-      if target then target:Hide() end
-      addon.DismissTimerFrame:SetScript("OnUpdate", nil)
+      if button then button.menu:Hide() end
+      dissmisser:SetScript("OnUpdate", nil)
     end
   end)
 end
 
-function addon:CancelMenuDimissTimer()
-  if self.DismissTimerFrame then
-    self.DismissTimerFrame:SetScript("OnUpdate", nil)
+function addon:CancelMenuDimissTimer(button)
+  local k = button:GetName()
+  if self.CT_CLP_STATUS.dismissers[k] then
+    self.CT_CLP_STATUS.dismissers[k]:SetScript("OnUpdate", nil)
   end
 end
 
 -- Unsafe, for ShowSettingsMenu use only
-function addon:CreateDropdownMenu(parent, frameLevel)
-  local menu = CreateFrame("Frame", nil, parent, "VerticalLayoutFrame")
+function addon:CreateDropdownMenu(name, parent, frameLevel)
+  local menu = CreateFrame("Frame", name, parent, "VerticalLayoutFrame")
   menu:SetFrameStrata("DIALOG")
   menu:SetFrameLevel(frameLevel)
   menu:SetWidth(CT_THEME.CLP.MENU.WIDTH)
@@ -556,10 +615,6 @@ function addon:CreateDropdownMenu(parent, frameLevel)
   border:SetAllPoints()
   border:SetColorTexture(unpack(CT_THEME.CLP.MENU.BORDER.COLOR))
 
-  -- Mouse entering and leaving events
-  menu:SetScript("OnEnter", function() addon:CancelMenuDimissTimer() end)
-  menu:SetScript("OnLeave", function() addon:StartMenuDismissTimer(menu) end)
-
   return menu
 end
 
@@ -569,7 +624,8 @@ function addon:ShowSettingsMenu(anchor)
   local settingsItems = self.CT_CLP_STATUS.settingsItems
 
   if not self.CT_CLP_SEETINGS_MENU then
-    self.CT_CLP_SEETINGS_MENU = addon:CreateDropdownMenu(self.CT_CLP, 110)
+    self.CT_CLP_SEETINGS_MENU = addon:CreateDropdownMenu("CT_CHARACTERS_LIST_PANEL_SETTINGS_MENU", self.CT_CLP, 110)
+    anchor.menu = self.CT_CLP_SEETINGS_MENU
   end
 
   self.CT_CLP_SEETINGS_MENU:ClearAllPoints()
@@ -615,12 +671,12 @@ function addon:ShowSettingsMenu(anchor)
     end
 
     settingsItem:SetScript("OnEnter", function(this)
-      addon:CancelMenuDimissTimer()
+      addon:CancelMenuDimissTimer(anchor)
       this.hl:Show()
     end)
     settingsItem:SetScript("OnLeave", function(this)
       this.hl:Hide()
-      addon:StartMenuDismissTimer(self.CT_CLP_SEETINGS_MENU)
+      addon:StartMenuDismissTimer(anchor)
     end)
 
     settingsItem:SetScript("OnClick", function()
@@ -633,6 +689,85 @@ function addon:ShowSettingsMenu(anchor)
   end
   self.CT_CLP_SEETINGS_MENU:Layout()
   self.CT_CLP_SEETINGS_MENU:Show()
+end
+
+function addon:ShowCurrenciesMenu(anchor)
+  local font = self.GUI_FONTS["SMALL_BOLD"]
+  local hiddenCurrencies = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CURRENCIES
+  local currenciesItems = self.CT_CLP_STATUS.currenciesItems
+
+  if not self.CT_CLP_CURRENCIES_MENU then
+    self.CT_CLP_CURRENCIES_MENU = addon:CreateDropdownMenu("CT_CHARACTERS_LIST_PANEL_CURRENCIES_MENU", self.CT_CLP, 110)
+    anchor.menu = self.CT_CLP_CURRENCIES_MENU
+  end
+
+  self.CT_CLP_CURRENCIES_MENU:ClearAllPoints()
+  self.CT_CLP_CURRENCIES_MENU:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", CT_THEME.CLP.BANNER.CURRENCIES.POINT[1], -4)
+
+  for _, item in ipairs(currenciesItems) do item:Hide() end
+
+  for i, currencyId in ipairs(TRACKED_CURRENCIES) do
+    local currenciesItem = currenciesItems[i]
+    if not currenciesItem then
+      currenciesItem = CreateFrame("Button", nil, self.CT_CLP_CURRENCIES_MENU)
+      currenciesItem:SetHeight(CT_THEME.CLP.MENU.ITEM.HEIGHT)
+
+      local cb = currenciesItem:CreateTexture(nil, "ARTWORK")
+      cb:SetSize(unpack(CT_THEME.CLP.MENU.ITEM.CHECKER.SIZE))
+      cb:SetPoint("LEFT", currenciesItem, "LEFT", CT_THEME.CLP.MENU.ITEM.SPACING, 0)
+      currenciesItem.cb = cb
+
+      local icon = currenciesItem:CreateTexture(nil, "OVERLAY")
+      icon:SetSize(unpack(CT_THEME.CLP.MENU.ITEM.ICON.SIZE))
+      icon:SetPoint("LEFT", cb, "RIGHT", CT_THEME.CLP.MENU.ITEM.SPACING, 0)
+      currenciesItem.icon = icon
+
+      local text = currenciesItem:CreateFontString(nil, "OVERLAY")
+      text:SetFontObject(font)
+      text:SetPoint("LEFT", icon, "RIGHT", CT_THEME.CLP.MENU.ITEM.ICON.SPACING, 0)
+      currenciesItem.text = text
+
+      local hl = currenciesItem:CreateTexture(nil, "BACKGROUND")
+      hl:SetAllPoints()
+      hl:SetColorTexture(unpack(CT_THEME.CLP.MENU.ITEM.HL.COLOR))
+      hl:Hide()
+      currenciesItem.hl = hl
+
+      currenciesItems[i] = currenciesItem
+    end
+
+    currenciesItem.layoutIndex = i
+    currenciesItem:SetWidth(self.CT_CLP_CURRENCIES_MENU:GetWidth())
+    currenciesItem.icon:SetTexture(TRACKED_CURRENCIES_CACHE[currencyId].icon)
+    currenciesItem.text:SetText(TRACKED_CURRENCIES_CACHE[currencyId].name)
+
+    if hiddenCurrencies[currencyId] then
+      currenciesItem.cb:SetColorTexture(unpack(CT_THEME.CLP.MENU.ITEM.CHECKER.UNCHECKED_COLOR))
+      currenciesItem.text:SetTextColor(unpack(CT_THEME.CLP.MENU.ITEM.TEXT.UNCHECKED_COLOR))
+    else
+      currenciesItem.cb:SetColorTexture(unpack(CT_THEME.CLP.MENU.ITEM.CHECKER.CHECKED_COLOR))
+      currenciesItem.text:SetTextColor(unpack(CT_THEME.CLP.MENU.ITEM.TEXT.CHECKED_COLOR))
+    end
+
+    currenciesItem:SetScript("OnEnter", function(this)
+      addon:CancelMenuDimissTimer(anchor)
+      this.hl:Show()
+    end)
+    currenciesItem:SetScript("OnLeave", function(this)
+      this.hl:Hide()
+      addon:StartMenuDismissTimer(anchor)
+    end)
+
+    currenciesItem:SetScript("OnClick", function()
+      hiddenCurrencies[currencyId] = not hiddenCurrencies[currencyId] or nil
+      addon:ClpRefreshGrid()
+      addon:ShowCurrenciesMenu(anchor)
+    end)
+
+    currenciesItem:Show()
+  end
+  self.CT_CLP_CURRENCIES_MENU:Layout()
+  self.CT_CLP_CURRENCIES_MENU:Show()
 end
 
 function addon:Util_CreateButton(name, parent, texture, width, height)
@@ -674,7 +809,7 @@ function addon:ClpDynamicWidths()
             local content = meta.formatter(character) -- make sure the formatter always safe return
             measurment:SetText(content)
             local tw = measurment:GetStringWidth()
-            w = math.max(tw, w)
+            w = math.max(tw + ((meta.padding and math.abs(meta.padding)) or 0), w)
           end
         end
       end
@@ -723,7 +858,7 @@ function addon:ClpBanner()
   title:SetText(L["CT_TITLE"])
 
   local close = addon:Util_CreateButton(
-    nil,
+    "CT_CHARACTERS_LIST_PANEL_BANNER_CLOSE",
     banner,
     CT_THEME.CLP.BANNER.CLOSE.TEXTURE,
     unpack(CT_THEME.CLP.BANNER.CLOSE.SIZE)
@@ -734,7 +869,7 @@ function addon:ClpBanner()
   end)
 
   local choice = addon:Util_CreateButton(
-    nil,
+    "CT_CHARACTERS_LIST_PANEL_BANNER_CHOICE",
     banner,
     CT_THEME.CLP.BANNER.CHOICE.TEXTURE,
     unpack(CT_THEME.CLP.BANNER.CHOICE.SIZE)
@@ -745,17 +880,24 @@ function addon:ClpBanner()
     addon:ClpRefreshGrid()
   end)
 
-  local columns = addon:Util_CreateButton(
-    nil,
+  local currencies = addon:Util_CreateButton(
+    "CT_CHARACTERS_LIST_PANEL_BANNER_CURRENCIES",
     banner,
-    CT_THEME.CLP.BANNER.COLUMNS.TEXTURE,
-    unpack(CT_THEME.CLP.BANNER.COLUMNS.SIZE)
+    CT_THEME.CLP.BANNER.CURRENCIES.TEXTURE,
+    unpack(CT_THEME.CLP.BANNER.CURRENCIES.SIZE)
   )
-  columns:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.COLUMNS.POINT))
+  currencies:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.CURRENCIES.POINT))
   -- menu at here
+  currencies:SetScript("OnEnter", function()
+    addon:CancelMenuDimissTimer(currencies)
+    addon:ShowCurrenciesMenu(currencies)
+  end)
+  currencies:SetScript("OnLeave", function()
+    addon:StartMenuDismissTimer(currencies)
+  end)
 
   local settings = addon:Util_CreateButton(
-    nil,
+    "CT_CHARACTERS_LIST_PANEL_BANNER_SETTINGS",
     banner,
     CT_THEME.CLP.BANNER.SETTINGS.TEXTURE,
     unpack(CT_THEME.CLP.BANNER.SETTINGS.SIZE)
@@ -763,15 +905,15 @@ function addon:ClpBanner()
   settings:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.SETTINGS.POINT))
   -- Mouse action setup for settings button
   settings:SetScript("OnEnter", function()
-    addon:CancelMenuDimissTimer()
+    addon:CancelMenuDimissTimer(settings)
     addon:ShowSettingsMenu(settings)
   end)
   settings:SetScript("OnLeave", function()
-    addon:StartMenuDismissTimer(addon.CT_CLP_SEETINGS_MENU)
+    addon:StartMenuDismissTimer(settings)
   end)
 
   local locker = addon:Util_CreateButton(
-    nil,
+    "CT_CHARACTERS_LIST_PANEL_BANNER_LOCKER",
     banner,
     CT_THEME.CLP.BANNER.LOCKER.TEXTURE,
     unpack(CT_THEME.CLP.BANNER.LOCKER.SIZE)
@@ -982,7 +1124,8 @@ function addon:ClpRefreshGrid()
               cell.text = cell:CreateFontString(nil, "OVERLAY")
             end
             cell:SetSize(widths[meta.id], CT_THEME.CLP.GRID.ROW.HEIGHT)
-            cell.text:SetPoint(meta.align)
+            -- cell.text:SetPoint(meta.align)
+            cell.text:SetPoint(meta.align, cell, meta.align, (meta.padding or 0), 0)
             cell.text:SetFontObject(font)
             if "function" == type(meta.formatter) then
               cell.text:SetText(meta.formatter(character))
@@ -1030,24 +1173,17 @@ function addon:ClpMain()
     grid = {},
     settingsItems = {},
     currenciesItems = {},
+    dismissers = {},
   }
 
-  -- local clp = CreateFrame("Frame", "CT_CHARACTERS_LIST_PANEL", UIParent, "BackdropTemplate")
   local clp = addon:Util_CreateBaseWindow("CT_CHARACTERS_LIST_PANEL", UIParent)
   self.CT_CLP = clp
 
   clp:SetHeight(CT_THEME.CLP.HEIGHT)
   clp:SetFrameStrata("MEDIUM")
-  -- clp:SetPoint("CENTER", UIParent, "CENTER")
-  -- clp:SetClampedToScreen(true)
-  -- clp:EnableMouse(true)
-  -- clp:SetMovable(true)
-  -- clp:RegisterForDrag("LeftButton")
-  -- clp:SetScript("OnDragStart", clp.StartMoving)
-  -- clp:SetScript("OnDragStop", clp.StopMovingOrSizing)
-  clp:SetScript("OnHide", function()
-    -- addon:HideAllMenus()
-  end)
+  -- clp:SetScript("OnHide", function()
+  --   addon:HideAllMenus()
+  -- end)
 
   local bg = clp:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
@@ -1065,6 +1201,8 @@ end
 function addon:ShowCurrenciesTooltip(anchor, character)
   if not anchor or not character or not character.currencies then return end
 
+  local hiddenCurrencies = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CURRENCIES
+
   GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
   GameTooltip:ClearLines()
 
@@ -1074,25 +1212,24 @@ function addon:ShowCurrenciesTooltip(anchor, character)
   if character.currencies and next(character.currencies) then
     local hasAnyOutput = false
     for _, currencyID in ipairs(TRACKED_CURRENCIES) do
-      local cData = character.currencies[currencyID]
-      if cData then
+      local currency = character.currencies[currencyID]
+      if not hiddenCurrencies[currencyID] and currency then
         hasAnyOutput = true
-        local iconStr = string.format("|T%d:14:14:0:0|t", cData.icon)
-        local leftColumn = string.format("%s  %s", iconStr, cData.name)
-        local qtyStr = string.format("|cffffffff%d|r", cData.quantity)
-        local weeklyStr = ""
-        if cData.maxWeeklyQuantity and cData.maxWeeklyQuantity > 0 then
-          weeklyStr = string.format(L["CURR_WEEKLY_LIMIT"], cData.quantityEarnedThisWeek, cData.maxWeeklyQuantity)
+        local icon = string.format("|T%d:14:14:0:0|t", currency.icon)
+        local leftColumn = string.format("%s  %s", icon, currency.name)
+        local qty = string.format("|cffffffff%d|r", currency.quantity)
+        local limit = ""
+        if currency.maxWeeklyQuantity and currency.maxWeeklyQuantity > 0 then
+          limit = string.format(L["CURR_WEEKLY_LIMIT"], currency.quantityEarnedThisWeek, currency.maxWeeklyQuantity)
         end
-        if cData.maxQuantity and cData.maxQuantity > 0 then
-          if cData.totalEarned and cData.totalEarned > 0 then
-            weeklyStr = string.format(L["CURR_SEASON_LIMIT"], cData.totalEarned, cData.maxQuantity)
+        if currency.maxQuantity and currency.maxQuantity > 0 then
+          if currency.totalEarned and currency.totalEarned > 0 then
+            limit = string.format(L["CURR_SEASON_LIMIT"], currency.totalEarned, currency.maxQuantity)
           else
-            weeklyStr = string.format(L["CURR_LIMIT"], cData.quantity, cData.maxQuantity)
+            limit = string.format(L["CURR_LIMIT"], currency.quantity, currency.maxQuantity)
           end
         end
-
-        local rightColumn = qtyStr .. weeklyStr
+        local rightColumn = qty .. limit
         GameTooltip:AddDoubleLine(leftColumn, rightColumn, 1, 1, 1, 1, 1, 1)
       end
     end
@@ -1107,195 +1244,6 @@ function addon:ShowCurrenciesTooltip(anchor, character)
   end
 
   GameTooltip:Show()
-end
-
--- ==========================================
--- Mini CLP
--- ==========================================
-function addon:ClpMiniMain()
-  if not MainFrame then
-    MainFrame = CreateBaseWindow("CGT_MainFrame", 360, 360, L["CHOOSE_CHARACTER"], "MainFramePosition")
-    MainFrame.scrollFrame = CreateFrame("ScrollFrame", nil, MainFrame, "UIPanelScrollFrameTemplate")
-    MainFrame.scrollFrame:SetPoint("TOPLEFT", MainFrame, "TOPLEFT", 10, -40)
-    MainFrame.scrollFrame:SetPoint("BOTTOMRIGHT", MainFrame, "BOTTOMRIGHT", -25, 10)
-
-    MainFrame.content = CreateFrame("Frame", nil, MainFrame.scrollFrame)
-    MainFrame.content:SetSize(200, 1)
-    MainFrame.scrollFrame:SetScrollChild(MainFrame.content)
-    MainFrame.buttons = {}
-    MainFrame.guidToButton = {}
-  end
-
-  for _, btn in ipairs(MainFrame.buttons) do
-    btn:Hide()
-    if btn.extraBtn then btn.extraBtn:Hide() end
-  end
-  table.wipe(MainFrame.guidToButton)
-
-  local activeGuids = {}
-  for guid, data in pairs(CharactersTrackerDB.CHARACTERS) do
-    if data.name then
-      activeGuids[guid] = true
-    end
-  end
-
-  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
-
-  for i = #orderKeeper, 1, -1 do
-    if not activeGuids[orderKeeper[i]] then
-      table.remove(orderKeeper, i)
-    end
-  end
-
-  for guid in pairs(activeGuids) do
-    local exists = false
-    for _, orderedGuid in ipairs(orderKeeper) do
-      if orderedGuid == guid then
-        exists = true
-        break
-      end
-    end
-    if not exists then
-      table.insert(orderKeeper, guid)
-    end
-  end
-
-  local index = 0
-  for _, guid in ipairs(orderKeeper) do
-    local data = CharactersTrackerDB.CHARACTERS[guid]
-    if data and data.name then
-      index = index + 1
-      local btn = MainFrame.buttons[index]
-      if not btn then
-        btn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
-        btn:SetSize(286, 30)
-        btn:SetBackdrop({
-          bgFile = "Interface\\Buttons\\WHITE8X8",
-          edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-          edgeSize = 8,
-          insets = { left = 2, right = 2, top = 2, bottom = 2 }
-        })
-        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
-
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.text:SetPoint("LEFT", btn, "LEFT", 8, 0)
-        btn.text:SetPoint("RIGHT", btn, "RIGHT", -55, 0)
-        btn.text:SetJustifyH("LEFT")
-
-        btn.equippedLevelText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        btn.equippedLevelText:SetPoint("RIGHT", btn, "RIGHT", -10, 0)
-        btn.equippedLevelText:SetJustifyH("RIGHT")
-
-        local extraBtn = CreateFrame("Button", nil, MainFrame.content, "BackdropTemplate")
-        extraBtn:SetSize(32, 30)
-        extraBtn:SetBackdrop({
-          bgFile = "Interface\\Buttons\\WHITE8X8",
-          edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-          edgeSize = 8,
-          insets = { left = 2, right = 2, top = 2, bottom = 2 }
-        })
-        extraBtn:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
-
-        local statusDot = extraBtn:CreateTexture(nil, "OVERLAY")
-        statusDot:SetSize(21, 21)
-        statusDot:SetPoint("CENTER", extraBtn, "CENTER", 0, 0)
-        statusDot:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
-
-        extraBtn.statusDot = statusDot
-        btn.extraBtn = extraBtn
-        MainFrame.buttons[index] = btn
-
-        btn:SetMovable(true)
-        btn:RegisterForDrag("LeftButton")
-
-        btn:SetScript("OnDragStart", function(self)
-          self.isDragging = true
-          self:SetFrameStrata("TOOLTIP")
-          if self.extraBtn then self.extraBtn:SetFrameStrata("TOOLTIP") end
-          self:StartMoving()
-          self:SetScript("OnUpdate", OnCharacterButtonUpdate)
-          GameTooltip:Hide()
-        end)
-
-        btn:SetScript("OnDragStop", function(self)
-          self.isDragging = false
-          self:StopMovingOrSizing()
-          self:SetScript("OnUpdate", nil)
-          self:SetFrameStrata("MEDIUM")
-          if self.extraBtn then self.extraBtn:SetFrameStrata("MEDIUM") end
-          RearrangeCharacterButtons()
-        end)
-      end
-
-      btn.guid = guid
-      MainFrame.guidToButton[guid] = btn
-
-      local classColor = RAID_CLASS_COLORS[data.class] and RAID_CLASS_COLORS[data.class].colorStr or "ffffffff"
-      btn.text:SetText(string.format("|c%s%s|r (|cff888888%s|r)", classColor, data.name, data.realm))
-
-      if data.equippedLevel and data.equippedLevel > 0 then
-        if data.officialLevel then
-          btn.equippedLevelText:SetText(string.format("|cffffd100%.2f|r", data.equippedLevel))
-        else
-          btn.equippedLevelText:SetText(string.format("|cffffd100%s%.2f|r", SYMBOL_APPROX_EQ, data.equippedLevel))
-        end
-      else
-        btn.equippedLevelText:SetText("|cff888888--|r")
-      end
-
-      -- ------------------------------------------------------------
-      -- 【状态同步算法】
-      -- ------------------------------------------------------------
-      local totalSlots = 0
-      local completedSlots = 0
-      local totalProgress = 0
-
-      if data.vault then
-        for _, vTypeId in ipairs({ 1, 2, 6 }) do
-          local typeData = data.vault[vTypeId]
-          if typeData then
-            for _, sData in ipairs(typeData) do
-              totalSlots = totalSlots + 1
-              totalProgress = totalProgress + (sData.progress or 0)
-              if sData.progress and sData.threshold and sData.progress >= sData.threshold then
-                completedSlots = completedSlots + 1
-              end
-            end
-          end
-        end
-      end
-
-      if totalSlots == 0 or totalProgress == 0 then
-        btn.extraBtn.statusDot:SetVertexColor(0.4, 0.4, 0.4, 0.85)
-      elseif completedSlots == totalSlots and totalSlots > 0 then
-        btn.extraBtn.statusDot:SetVertexColor(0.1, 0.75, 0.1, 0.95)
-      else
-        btn.extraBtn.statusDot:SetVertexColor(0.85, 0.65, 0.1, 0.95)
-      end
-      -- ------------------------------------------------------------
-
-      btn:SetScript("OnClick", function() ShowCharacterDetail(guid) end)
-      btn.extraBtn:SetScript("OnClick", function() ShowCharacterVault(guid) end)
-
-      btn:SetScript("OnEnter", function(self)
-        if not self.isDragging then
-          btn:SetBackdropColor(0.25, 0.25, 0.25, 0.8)
-          ShowCurrencyTooltip(self, guid)
-        end
-      end)
-
-      btn:SetScript("OnLeave", function()
-        btn:SetBackdropColor(0.15, 0.15, 0.15, 0.6)
-        GameTooltip:Hide()
-      end)
-
-      btn:Show()
-      if btn.extraBtn then btn.extraBtn:Show() end
-    end
-  end
-
-  RearrangeCharacterButtons()
-  MainFrame:Show()
 end
 
 -- ==========================================
@@ -1652,9 +1600,365 @@ function addon:ShowCgp(id)
   self.CT_CGP:Show()
 end
 
--- addon:X()
--- addon:InitWorkspace()
--- addon:ClpMain()
--- addon.CT_CLP:SetWidth(1000)
--- addon.CT_CLP_BANNER:SetWidth(1000)
--- addon.CT_CLP_FOOTER:SetWidth(1000)
+-- ==========================================
+-- Inventory functionality
+-- ==========================================
+function addon:GetContainerName(id)
+  if id >= 0 and id <= 4 then
+    return L["INV_LOC_BAG"]
+  elseif id == 5 then
+    return L["INV_LOC_REAGENT_BAG"]
+  elseif id >= 6 and id <= 11 then
+    return L["INV_LOC_BANK"]
+  elseif id >= 12 and id <= 16 then
+    return L["INV_LOC_WARBAND_BANK"]
+  else
+    return L["INV_LOC_OTHERS"]
+  end
+end
+
+function addon:AggregateWarbandItems()
+  local AGGREGATED_ITEMS = self.CT_IP_STATUS.AGGREGATED_ITEMS
+  table.wipe(AGGREGATED_ITEMS)
+
+  for _, character in pairs(CharactersTrackerDB.CHARACTERS) do
+    if type(character) == "table" and character.name and character.bags then
+      local storage = string.format("%s-%s", FORMATTERS.NAME(character), FORMATTERS.REALM(character))
+      for bagId, bag in pairs(character.bags) do
+        for _, item in pairs(bag) do
+          if item and item.id then
+            if not AGGREGATED_ITEMS[item.id] then
+              AGGREGATED_ITEMS[item.id] = {
+                id = item.id,
+                name = item.link and (C_Item.GetItemInfo(item.link) or item.link:match("%[(.-)%]")),
+                icon = item.icon or 134400,
+                quality = item.quality or 1,
+                link = item.link,
+                totalCount = 0,
+                sources = {}
+              }
+            end
+            AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
+            local container = addon:GetContainerName(bagId)
+            if not AGGREGATED_ITEMS[item.id].sources[storage] then
+              AGGREGATED_ITEMS[item.id].sources[storage] = {}
+            end
+            AGGREGATED_ITEMS[item.id].sources[storage][container] =
+                (AGGREGATED_ITEMS[item.id].sources[storage][container] or 0) + item.count
+          end
+        end
+      end
+    end
+  end
+  -- warband data
+  for bagId, bag in pairs(CharactersTrackerDB.WARBAND.BAGS) do
+    for _, item in pairs(bag) do
+      if item and item.id then
+        if not AGGREGATED_ITEMS[item.id] then
+          AGGREGATED_ITEMS[item.id] = {
+            id = item.id,
+            name = item.link and (C_Item.GetItemInfo(item.link) or item.link:match("%[(.-)%]")),
+            icon = item.icon or 134400,
+            quality = item.quality or 1,
+            link = item.link,
+            totalCount = 0,
+            sources = {}
+          }
+        end
+
+        AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
+        local storage = L["INV_SRC_WARBAND"]
+        local container = addon:GetContainerName(bagId)
+        if not AGGREGATED_ITEMS[item.id].sources[storage] then
+          AGGREGATED_ITEMS[item.id].sources[storage] = {}
+        end
+        AGGREGATED_ITEMS[item.id].sources[storage][container] =
+            (AGGREGATED_ITEMS[item.id].sources[storage][container] or 0) + item.count
+      end
+    end
+  end
+end
+
+function addon:FilterAndSortItems(searchText)
+  local FILTERED_ITEMS = self.CT_IP_STATUS.FILTERED_ITEMS
+  local AGGREGATED_ITEMS = self.CT_IP_STATUS.AGGREGATED_ITEMS
+
+  table.wipe(FILTERED_ITEMS)
+  searchText = searchText and string.lower(strtrim(searchText)) or ""
+
+  for _, item in pairs(AGGREGATED_ITEMS) do
+    local match = false
+    if "" == searchText then
+      match = true
+    else
+      local itemName = string.lower(item.name or "")
+      if string.find(itemName, searchText, 1, true) or string.find(tostring(item.id), searchText, 1, true) then
+        match = true
+      end
+    end
+
+    if match then
+      table.insert(FILTERED_ITEMS, item)
+    end
+  end
+
+  table.sort(
+    FILTERED_ITEMS,
+    function(a, b)
+      if a.quality ~= b.quality then
+        return (a.quality or 0) > (b.quality or 0)
+      else
+        return (a.id or 0) > (b.id or 0)
+      end
+    end
+  )
+end
+
+function addon:UpdateInventoryGrid()
+  if not self.CT_INVENTORY_PANEL then return end
+
+  local FILTERED_ITEMS = self.CT_IP_STATUS.FILTERED_ITEMS
+
+  local totalItems = #FILTERED_ITEMS
+  local maxPages = math.max(1, math.ceil(totalItems / self.CT_IP_STATUS.ITEMS_PER_PAGE))
+  if self.CT_IP_STATUS.CURRENT_PAGE > maxPages then self.CT_IP_STATUS.CURRENT_PAGE = maxPages end
+
+  self.CT_INVENTORY_PANEL.paging:SetText(string.format("%d / %d", self.CT_IP_STATUS.CURRENT_PAGE, maxPages))
+
+  local startIndex = (self.CT_IP_STATUS.CURRENT_PAGE - 1) * self.CT_IP_STATUS.ITEMS_PER_PAGE
+
+  for i = 1, self.CT_IP_STATUS.ITEMS_PER_PAGE do
+    local btn = self.CT_INVENTORY_PANEL.grids[i]
+    local item = FILTERED_ITEMS[startIndex + i]
+
+    if item then
+      btn.icon:SetTexture(item.icon)
+      btn.counter:SetText(item.totalCount)
+      btn.item = item
+      btn:Show()
+    else
+      btn.item = nil
+      btn:Hide()
+    end
+  end
+end
+
+function addon:CreateInventoryPanel()
+  if self.CT_INVENTORY_PANEL then
+    return
+  end
+
+  self.CT_IP_STATUS = {
+    CURRENT_PAGE = 1,
+    ITEMS_PER_PAGE = 40,
+    AGGREGATED_ITEMS = {},
+    FILTERED_ITEMS = {},
+  }
+
+  local inventoryPanel = addon:Util_CreateBaseWindow("CT_INVENTORY_PANEL", UIParent)
+  self.CT_INVENTORY_PANEL = inventoryPanel
+  inventoryPanel:Hide()
+
+  inventoryPanel:SetFrameStrata("MEDIUM")
+  inventoryPanel:SetSize(CT_THEME.INVENTORY_PANEL.WIDTH, CT_THEME.INVENTORY_PANEL.HEIGHT)
+
+  inventoryPanel.bg = inventoryPanel:CreateTexture(nil, "BACKGROUND")
+  inventoryPanel.bg:SetAllPoints()
+  inventoryPanel.bg:SetColorTexture(unpack(CT_THEME.INVENTORY_PANEL.BG.COLOR))
+
+  inventoryPanel.banner = addon:Util_CreateBanner(
+    "CT_INVENTORY_PANEL_BANNER",
+    self.CT_INVENTORY_PANEL,
+    L["INV_TITLE"],
+    CT_THEME.INVENTORY_PANEL.BANNER
+  )
+  self.CT_INVENTORY_PANEL_BANNER = inventoryPanel.banner
+
+  local searchBox = CreateFrame("EditBox", nil, self.CT_INVENTORY_PANEL, "InputBoxTemplate")
+  inventoryPanel.searchBox = searchBox
+  searchBox:SetSize(604, 24)
+  searchBox:SetPoint("TOPLEFT", self.CT_INVENTORY_PANEL, "TOPLEFT", 21, -44)
+  searchBox:SetAutoFocus(false)
+
+  local sLabel = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  sLabel:SetPoint("LEFT", searchBox, "LEFT", 5, 0)
+  sLabel:SetText(L["INV_SEARCH_TIP"])
+
+  searchBox:SetScript("OnTextChanged", function(_self)
+    if _self:GetText() == "" then sLabel:Show() else sLabel:Hide() end
+    addon:FilterAndSortItems(_self:GetText())
+    addon.CT_IP_STATUS.CURRENT_PAGE = 1
+    addon:UpdateInventoryGrid()
+  end)
+  searchBox:SetScript("OnEscapePressed", function(_self) _self:ClearFocus() end)
+
+  self.CT_INVENTORY_PANEL.grids = {}
+  local startX = 15
+  local startY = -80
+  local spacingX = 14
+  local spacingY = 24
+  local iconSide = 64
+
+  for row = 0, 4 do
+    for col = 0, 7 do
+      local btn = CreateFrame("Button", nil, self.CT_INVENTORY_PANEL, "BackdropTemplate")
+      btn:SetSize(iconSide, iconSide)
+      btn.icon = btn:CreateTexture(nil, "BACKGROUND")
+      btn.icon:SetAllPoints(btn)
+
+      btn.counter = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+      btn.counter:SetPoint("TOP", btn, "BOTTOM", 0, 0)
+
+      btn:SetPoint(
+        "TOPLEFT",
+        self.CT_INVENTORY_PANEL,
+        "TOPLEFT",
+        startX + (col * (spacingX + iconSide)),
+        startY - (row * (spacingY + iconSide))
+      )
+
+      btn:SetScript("OnClick", function(_self)
+        if _self.item and _self.item.link and IsShiftKeyDown() then
+          local editBox = ChatEdit_GetActiveWindow()
+          if editBox then
+            editBox:Insert(_self.item.link)
+          end
+        end
+      end)
+
+      btn:SetScript(
+        "OnEnter",
+        function(_self)
+          if not _self.item then return end
+          GameTooltip:SetOwner(_self, "ANCHOR_RIGHT")
+          if _self.item.link then
+            GameTooltip:SetHyperlink(_self.item.link)
+          else
+            -- GameTooltip:SetText(self.item.name)
+            GameTooltip:AddLine(_self.item.name)
+          end
+
+          GameTooltip:AddLine(" ")
+          GameTooltip:AddLine(L["INV_DETAIL"])
+
+          for character, locations in pairs(_self.item.sources) do
+            for container, count in pairs(locations) do
+              GameTooltip:AddDoubleLine(
+                string.format(" %s [%s]", character, container),
+                string.format("(%d)", count),
+                1, 1, 1, 1, 1, 1
+              )
+            end
+          end
+          GameTooltip:Show()
+        end
+      )
+      btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+      table.insert(self.CT_INVENTORY_PANEL.grids, btn)
+    end
+  end
+
+  local FILTERED_ITEMS = self.CT_IP_STATUS.FILTERED_ITEMS
+
+  local prevBtn = CreateFrame("Button", nil, self.CT_INVENTORY_PANEL, "GameMenuButtonTemplate")
+  prevBtn:SetSize(96, 24)
+  prevBtn:SetPoint("BOTTOMLEFT", self.CT_INVENTORY_PANEL, "BOTTOMLEFT", 64, 12)
+  prevBtn:SetText("<")
+  prevBtn:SetScript("OnClick", function()
+    if self.CT_IP_STATUS.CURRENT_PAGE > 1 then
+      self.CT_IP_STATUS.CURRENT_PAGE = self.CT_IP_STATUS.CURRENT_PAGE - 1
+      addon:UpdateInventoryGrid()
+    end
+  end)
+
+  local nextBtn = CreateFrame("Button", nil, self.CT_INVENTORY_PANEL, "GameMenuButtonTemplate")
+  nextBtn:SetSize(96, 24)
+  nextBtn:SetPoint("BOTTOMRIGHT", self.CT_INVENTORY_PANEL, "BOTTOMRIGHT", -64, 12)
+  nextBtn:SetText(">")
+  nextBtn:SetScript("OnClick", function()
+    local maxPages = math.max(1, math.ceil(#FILTERED_ITEMS / self.CT_IP_STATUS.ITEMS_PER_PAGE))
+    if self.CT_IP_STATUS.CURRENT_PAGE < maxPages then
+      self.CT_IP_STATUS.CURRENT_PAGE = self.CT_IP_STATUS.CURRENT_PAGE + 1
+      addon:UpdateInventoryGrid()
+    end
+  end)
+
+  local paging = self.CT_INVENTORY_PANEL:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  paging:SetPoint("CENTER", self.CT_INVENTORY_PANEL, "BOTTOM", 0, 26)
+  self.CT_INVENTORY_PANEL.paging = paging
+end
+
+function addon:ToggleInventoryPanel()
+  addon:CreateInventoryPanel()
+  if self.CT_INVENTORY_PANEL:IsShown() then
+    self.CT_INVENTORY_PANEL:Hide()
+  else
+    addon:AggregateWarbandItems()
+    addon:FilterAndSortItems(self.CT_INVENTORY_PANEL.searchBox:GetText() or "")
+    self.CT_IP_STATUS.CURRENT_PAGE = 1
+    addon:UpdateInventoryGrid()
+    self.CT_INVENTORY_PANEL:Show()
+  end
+end
+
+-- ==========================================
+-- Floating button
+-- ==========================================
+function addon:CreateFloatingButton()
+  if self.CT_FB then
+    return
+  end
+
+  local fb = CreateFrame("Button", "CT_FLOATING_BUTTON_STUB", UIParent)
+  self.CT_FB = fb
+  fb:SetSize(unpack(CT_THEME.FB.SIZE))
+  fb:SetFrameStrata("HIGH")
+  fb:SetClampedToScreen(true)
+  fb:SetMovable(true)
+  fb:EnableMouse(true)
+  fb:RegisterForDrag("LeftButton")
+
+  fb.icon = fb:CreateTexture(nil, "ARTWORK")
+  fb.icon:SetSize(unpack(CT_THEME.FB.ICON.SIZE))
+  fb.icon:SetPoint("CENTER", 0, 0)
+  fb.icon:SetTexture(CT_THEME.FB.ICON.TEXTURE)
+
+  fb:SetScript("OnDragStart", function(_self) _self:StartMoving() end)
+  fb:SetScript("OnDragStop", function(_self)
+    _self:StopMovingOrSizing()
+    if CharactersTrackerDB then
+      local point, _, relativePoint, xOfs, yOfs = _self:GetPoint()
+      CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"] = {
+        point = point, relativePoint = relativePoint, xOfs = xOfs, yOfs = yOfs
+      }
+    end
+  end)
+
+  fb:RegisterForClicks("AnyUp")
+  fb:SetScript("OnClick", function(_, button)
+    if button == "RightButton" then
+      addon:ToggleInventoryPanel()
+    else
+      addon:Main()
+    end
+  end)
+
+  fb:SetScript("OnEnter", function(_self)
+    GameTooltip:SetOwner(_self, "ANCHOR_LEFT")
+    GameTooltip:SetText(L["FB_FUNC"], 1, 1, 1)
+    GameTooltip:AddLine(L["FB_L1"], 0.2, 1.0, 0.2)
+    GameTooltip:AddLine(L["FB_L2"], 0.4, 0.8, 0.2)
+    GameTooltip:AddLine(L["FB_L3"], 0.4, 0.8, 0.2)
+    GameTooltip:Show()
+  end)
+  fb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+  if CharactersTrackerDB and CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"] then
+    local pos = CharactersTrackerDB.SETTINGS.POSITIONS["FloatingButtonPosition"]
+    fb:ClearAllPoints()
+    fb:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
+  else
+    fb:SetPoint("CENTER", UIParent, "CENTER", -200, 0)
+  end
+end

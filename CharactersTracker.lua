@@ -50,14 +50,14 @@ local BANK_SLOTS = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local WARBAND_BANK_SLOT_IDX = 12
 
 local MainFrame, DetailFrame, VaultFrame, FloatingButton, InventoryFrame
-local AGGREGATED_ITEMS = {} -- 全局聚合清洗后的检索池
-local FILTERED_ITEMS = {}   -- 搜索/过滤后的当前显示池
+-- local AGGREGATED_ITEMS = {} -- 全局聚合清洗后的检索池
+-- local FILTERED_ITEMS = {}   -- 搜索/过滤后的当前显示池
 
-local ITEMS_PER_PAGE = 40   -- 5x8 网格布局，每页 40 个格子
-local CURRENT_PAGE = 1
+-- local ITEMS_PER_PAGE = 40   -- 5x8 网格布局，每页 40 个格子
+-- local CURRENT_PAGE = 1
 
 -- 转发前置声明，确保代码块顺序调用安全
-local ToggleInventoryWindow
+-- local ToggleInventoryWindow
 local isBankOpen = false
 local guid
 
@@ -79,13 +79,25 @@ local function DbCheck()
         POSITIONS = {},
         CHARACTERS_ORDER = {},
         CLP = {
+          HIDDEN_CURRENCIES = {},
           HIDDEN_COLUMNS = {},
           HIDDEN_CHARACTERS = {},
         },
       },
     }
-    CharactersTrackerDB[DB_DATA_VERSION] = DATA_VERSION
+  else
+    CharactersTrackerDB.CHARACTERS = CharactersTrackerDB.CHARACTERS or {}
+    CharactersTrackerDB.WARBAND = CharactersTrackerDB.WARBAND or {}
+    CharactersTrackerDB.WARBAND.BAGS = CharactersTrackerDB.WARBAND.BAGS or {}
+    CharactersTrackerDB.SETTINGS = CharactersTrackerDB.SETTINGS or {}
+    CharactersTrackerDB.SETTINGS.POSITIONS = CharactersTrackerDB.SETTINGS.POSITIONS or {}
+    CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER or {}
+    CharactersTrackerDB.SETTINGS.CLP = CharactersTrackerDB.SETTINGS.CLP or {}
+    CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CURRENCIES = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CURRENCIES or {}
+    CharactersTrackerDB.SETTINGS.CLP.HIDDEN_COLUMNS = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_COLUMNS or {}
+    CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CHARACTERS = CharactersTrackerDB.SETTINGS.CLP.HIDDEN_CHARACTERS or {}
   end
+  CharactersTrackerDB[DB_DATA_VERSION] = DATA_VERSION
 end
 
 local function InitCharacterCache()
@@ -950,11 +962,13 @@ local function CreateFloatingButton()
 
   -- 改动：支持左键开启列表、右键开启战团全资产统计
   FloatingButton:RegisterForClicks("AnyUp")
-  FloatingButton:SetScript("OnClick", function(self, button)
+  FloatingButton:SetScript("OnClick", function(_, button)
     if button == "RightButton" then
-      ToggleInventoryWindow()
+      -- ToggleInventoryWindow()
+      addon:ToggleInventoryPanel()
     else
-      if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+      addon:Main()
+      -- if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
     end
   end)
 
@@ -974,271 +988,6 @@ local function CreateFloatingButton()
     FloatingButton:SetPoint(pos.point, UIParent, pos.relativePoint, pos.xOfs, pos.yOfs)
   else
     FloatingButton:SetPoint("CENTER", UIParent, "CENTER", -200, 0)
-  end
-end
-
--- ==========================================
--- 战团资产汇总与网格检索面板
--- ==========================================
-local function GetContainerNameText(bagID)
-  if bagID >= 0 and bagID <= 4 then
-    return L["INV_LOC_BAG"]
-  elseif bagID == 5 then
-    return L["INV_LOC_REAGENT_BAG"]
-  elseif bagID >= 6 and bagID <= 11 then
-    return L["INV_LOC_BANK"]
-  elseif bagID >= 12 and bagID <= 16 then
-    return L["INV_LOC_WARBAND_BANK"]
-  else
-    return L["INV_LOC_OTHERS"]
-  end
-end
-
-local function AggregateWarbandItems()
-  table.wipe(AGGREGATED_ITEMS)
-  if not CharactersTrackerDB then return end
-
-  -- characters data
-  for _, charData in pairs(CharactersTrackerDB.CHARACTERS) do
-    if type(charData) == "table" and charData.name and charData.bags then
-      local charNameWithRealm = string.format("%s-%s", charData.name, charData.realm or GetRealmName())
-      local classColor = RAID_CLASS_COLORS[charData.class] and RAID_CLASS_COLORS[charData.class].colorStr or "ffffffff"
-
-      for bagID, bagData in pairs(charData.bags) do
-        for slotID, item in pairs(bagData) do
-          if item and item.id then
-            if not AGGREGATED_ITEMS[item.id] then
-              AGGREGATED_ITEMS[item.id] = {
-                id = item.id,
-                name = item.link and (GetItemInfo(item.link) or item.link:match("%[(.-)%]")) or L["INV_LOADING"],
-                icon = item.icon or 134400,
-                quality = item.quality or 1,
-                link = item.link,
-                totalCount = 0,
-                sources = {}
-              }
-            end
-
-            AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
-            local srcKey = string.format("|c%s%s|r", classColor, charNameWithRealm)
-            local locText = GetContainerNameText(bagID)
-            if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
-              AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
-            end
-            AGGREGATED_ITEMS[item.id].sources[srcKey][locText] = (AGGREGATED_ITEMS[item.id].sources[srcKey][locText] or 0) +
-                item.count
-          end
-        end
-      end
-    end
-  end
-  -- warband data
-  for bagID, bagData in pairs(CharactersTrackerDB.WARBAND.BAGS) do
-    for slotID, item in pairs(bagData) do
-      if item and item.id then
-        if not AGGREGATED_ITEMS[item.id] then
-          AGGREGATED_ITEMS[item.id] = {
-            id = item.id,
-            name = item.link and (GetItemInfo(item.link) or item.link:match("%[(.-)%]")) or L["INV_LOADING"],
-            icon = item.icon or 134400,
-            quality = item.quality or 1,
-            link = item.link,
-            totalCount = 0,
-            sources = {}
-          }
-        end
-
-        AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
-        local srcKey = L["INV_SRC_WARBAND"]
-        local locText = GetContainerNameText(bagID)
-        if not AGGREGATED_ITEMS[item.id].sources[srcKey] then
-          AGGREGATED_ITEMS[item.id].sources[srcKey] = {}
-        end
-        AGGREGATED_ITEMS[item.id].sources[srcKey][locText] = (AGGREGATED_ITEMS[item.id].sources[srcKey][locText] or 0) +
-            item.count
-      end
-    end
-  end
-end
-
-local function FilterAndSortItems(searchText)
-  table.wipe(FILTERED_ITEMS)
-  searchText = searchText and string.lower(strtrim(searchText)) or ""
-
-  for _, item in pairs(AGGREGATED_ITEMS) do
-    local match = false
-    if searchText == "" then
-      match = true
-    else
-      local itemName = string.lower(item.name or "")
-      if string.find(itemName, searchText, 1, true) or string.find(tostring(item.id), searchText, 1, true) then
-        match = true
-      end
-    end
-
-    if match then
-      table.insert(FILTERED_ITEMS, item)
-    end
-  end
-
-  table.sort(FILTERED_ITEMS, function(a, b)
-    if a.quality ~= b.quality then
-      return (a.quality or 0) > (b.quality or 0)
-    else
-      return (a.id or 0) > (b.id or 0)
-    end
-  end)
-end
-
-local function UpdateInventoryGrid()
-  if not InventoryFrame then return end
-
-  local totalItems = #FILTERED_ITEMS
-  local maxPages = math.max(1, math.ceil(totalItems / ITEMS_PER_PAGE))
-  if CURRENT_PAGE > maxPages then CURRENT_PAGE = maxPages end
-
-  InventoryFrame.pageText:SetText(string.format("%d / %d", CURRENT_PAGE, maxPages))
-
-  local startIndex = (CURRENT_PAGE - 1) * ITEMS_PER_PAGE
-
-  for i = 1, ITEMS_PER_PAGE do
-    local gridBtn = InventoryFrame.grids[i]
-    local itemData = FILTERED_ITEMS[startIndex + i]
-
-    if itemData then
-      gridBtn.icon:SetTexture(itemData.icon)
-      gridBtn.countText:SetText(itemData.totalCount)
-      gridBtn.itemData = itemData
-      gridBtn:Show()
-
-      if itemData.quality and itemData.quality > 1 then
-        local r, g, b = C_Item.GetItemQualityColor(itemData.quality)
-        gridBtn:SetBackdropBorderColor(r, g, b, 1)
-      else
-        gridBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.4)
-      end
-    else
-      gridBtn.itemData = nil
-      gridBtn:Hide()
-    end
-  end
-end
-
-local function CreateInventoryWindow()
-  if InventoryFrame then return end
-
-  InventoryFrame = CreateBaseWindow("CGT_InventoryFrame", 640, 560, L["INV_TITLE"], "InventoryFramePosition")
-  InventoryFrame:Hide()
-
-  local searchBox = CreateFrame("EditBox", nil, InventoryFrame, "InputBoxTemplate")
-  searchBox:SetSize(604, 24)
-  searchBox:SetPoint("TOPLEFT", InventoryFrame, "TOPLEFT", 21, -35)
-  searchBox:SetAutoFocus(false)
-
-  local sLabel = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-  sLabel:SetPoint("LEFT", searchBox, "LEFT", 5, 0)
-  sLabel:SetText(L["INV_SEARCH_TIP"])
-
-  searchBox:SetScript("OnTextChanged", function(self)
-    if self:GetText() == "" then sLabel:Show() else sLabel:Hide() end
-    FilterAndSortItems(self:GetText())
-    CURRENT_PAGE = 1
-    UpdateInventoryGrid()
-  end)
-  searchBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-
-  InventoryFrame.grids = {}
-  local startX = 15
-  local startY = -80
-  local spacingX = 14
-  local spacingY = 24
-  local iconSide = 64
-
-  for row = 0, 4 do
-    for col = 0, 7 do
-      local btn = CreateFrame("Button", nil, InventoryFrame, "BackdropTemplate")
-      btn:SetSize(iconSide, iconSide)
-      btn.icon = btn:CreateTexture(nil, "BACKGROUND")
-      btn.icon:SetAllPoints(btn)
-      -- btn.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-
-      btn.countText = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-      btn.countText:SetPoint("TOP", btn, "BOTTOM", 0, 0)
-
-      btn:SetPoint("TOPLEFT", InventoryFrame, "TOPLEFT", startX + (col * (spacingX + iconSide)),
-        startY - (row * (spacingY + iconSide)))
-
-      btn:SetScript("OnClick", function(self)
-        if self.itemData and self.itemData.link and IsShiftKeyDown() then
-          local editBox = ChatEdit_GetActiveWindow()
-          if editBox then editBox:Insert(self.itemData.link) end
-        end
-      end)
-
-      btn:SetScript("OnEnter", function(self)
-        if not self.itemData then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        if self.itemData.link then
-          GameTooltip:SetHyperlink(self.itemData.link)
-        else
-          GameTooltip:SetText(self.itemData.name)
-        end
-
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L["INV_DETAIL"])
-
-        for charInfo, locations in pairs(self.itemData.sources) do
-          for locName, count in pairs(locations) do
-            GameTooltip:AddDoubleLine("  " .. charInfo .. " [" .. locName .. "]", "|cffffffff(" .. count .. ")|r", 0.9,
-              0.9, 0.9, 1, 1, 1)
-          end
-        end
-        GameTooltip:Show()
-      end)
-      btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-      table.insert(InventoryFrame.grids, btn)
-    end
-  end
-
-  local prevBtn = CreateFrame("Button", nil, InventoryFrame, "GameMenuButtonTemplate")
-  prevBtn:SetSize(96, 24)
-  prevBtn:SetPoint("BOTTOMLEFT", InventoryFrame, "BOTTOMLEFT", 64, 12)
-  prevBtn:SetText("<")
-  prevBtn:SetScript("OnClick", function()
-    if CURRENT_PAGE > 1 then
-      CURRENT_PAGE = CURRENT_PAGE - 1
-      UpdateInventoryGrid()
-    end
-  end)
-
-  local nextBtn = CreateFrame("Button", nil, InventoryFrame, "GameMenuButtonTemplate")
-  nextBtn:SetSize(96, 24)
-  nextBtn:SetPoint("BOTTOMRIGHT", InventoryFrame, "BOTTOMRIGHT", -64, 12)
-  nextBtn:SetText(">")
-  nextBtn:SetScript("OnClick", function()
-    local maxPages = math.max(1, math.ceil(#FILTERED_ITEMS / ITEMS_PER_PAGE))
-    if CURRENT_PAGE < maxPages then
-      CURRENT_PAGE = CURRENT_PAGE + 1
-      UpdateInventoryGrid()
-    end
-  end)
-
-  local pageText = InventoryFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  pageText:SetPoint("CENTER", InventoryFrame, "BOTTOM", 0, 26)
-  InventoryFrame.pageText = pageText
-end
-
-ToggleInventoryWindow = function()
-  CreateInventoryWindow()
-  if InventoryFrame:IsShown() then
-    InventoryFrame:Hide()
-  else
-    AggregateWarbandItems()
-    FilterAndSortItems("")
-    CURRENT_PAGE = 1
-    UpdateInventoryGrid()
-    InventoryFrame:Show()
   end
 end
 
@@ -1408,6 +1157,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     end)
   elseif event == "PLAYER_ENTERING_WORLD" then
     InitCharacterCache()
+    addon:InitEnteringWorld()
     -- ==========================================
     -- Try to Triggering weekly rewards notify.
     -- ==========================================
@@ -1419,9 +1169,17 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
       ScanCharacterRewards()
       ScanCharacterStats()
     end)
-    CreateFloatingButton()
+    addon:CreateFloatingButton()
   end
 end)
+
+function addon:Main()
+  if addon.CT_CLP and addon.CT_CLP:IsShown() then
+    addon.CT_CLP:Hide()
+  else
+    addon:ClpMain()
+  end
+end
 
 -- ==========================================
 -- 命令注册
@@ -1430,141 +1188,10 @@ SLASH_WBCT1 = "/wbct"
 SLASH_WBCT2 = "/ct"
 SlashCmdList["WBCT"] = function(msg)
   if msg == "bag" or msg == "inv" then
-    ToggleInventoryWindow()
+    addon:ToggleInventoryPanel()
   elseif "debug" == msg then
-    addon:ClpMain()
-  elseif "x" == msg then
-    -- addon:CreateCgp()
-    addon:ShowCgp("Player-709-06D59F76")
-  elseif "t" == msg then
-    XXX = ScanCharacterStats()
-  else
     if MainFrame and MainFrame:IsShown() then MainFrame:Hide() else OpenMainWindow() end
+  else
+    addon:Main()
   end
-end
-
-
-
--- frame:RegisterEvent("PLAYER_ENTERING_WORLD") -- 登录游戏/跨图加载
--- frame:RegisterEvent("UNIT_INVENTORY_CHANGED") -- 装备发生变化
--- frame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED") -- 切换了专精/天赋
--- frame:RegisterEvent("PLAYER_LEVEL_UP") -- 角色升级
--- frame:RegisterEvent("UNIT_STATS") -- 基础主属性发生变化
--- frame:RegisterEvent("COMBAT_RATING_UPDATE") -- 二次/三次绿字属性发生变化
-function addon:GetCharacterStats()
-  local statsList = {}
-
-  -- ====================================================================
-  -- 1. 基础核心属性（力量、敏捷、智力、耐力、以及补全的【护甲】）
-  -- ====================================================================
-
-  -- 🟢 耐力 (Stamina)
-  local currentStam = UnitStat("player", 3)
-  if currentStam and currentStam > 0 then
-    table.insert(statsList, { name = SPEC_FRAME_STAMINA or "耐力", value = tostring(currentStam) })
-  end
-
-  -- 🟢 补全：护甲 (Armor)
-  -- UnitArmor 返回的第一个值就是当前面板最终总护甲
-  -- 🟢 修正：使用全版本通用的 ARMOR 常量，且去掉多余的拦截，强制注入
-  local baseArmor, effectiveArmor, armorArmor, bonusArmor = UnitArmor("player")
-  -- 第二个返回值 effectiveArmor 是包含了所有天赋、光环、护甲专精加成后的最终实际护甲
-  local totalArmor = effectiveArmor or baseArmor or 0
-
-  table.insert(statsList, { name = ARMOR or "护甲", value = tostring(totalArmor) })
-
-  -- 动态过滤其余三项主属性（力量/敏捷/智力）
-  local primaryTypes = {
-    { id = 1, tag = "STRENGTH", name = SPEC_FRAME_STRENGTH or "力量" },
-    { id = 2, tag = "AGILITY", name = SPEC_FRAME_AGILITY or "敏捷" },
-    { id = 4, tag = "INTELLECT", name = SPEC_FRAME_INTELLECT or "智力" },
-  }
-  for _, stat in ipairs(primaryTypes) do
-    if self:IsStatEffectiveForCurrentSpec(stat.tag) then
-      local val = UnitStat("player", stat.id)
-      table.insert(statsList, { name = stat.name, value = tostring(val) })
-    end
-  end
-
-  -- ====================================================================
-  -- 2. 强化二次属性 (Secondary Stats)
-  -- ====================================================================
-  local critChance = GetCritChance()
-  table.insert(statsList, { name = STAT_CRITICAL_STRIKE or "暴击", value = string.format("%.2f%%", critChance) })
-
-  local hastePercent = GetHaste()
-  table.insert(statsList, { name = STAT_HASTE or "急速", value = string.format("%.2f%%", hastePercent) })
-
-  if self:IsStatEffectiveForCurrentSpec("MASTERY") then
-    local masteryEffect = GetMasteryEffect()
-    table.insert(statsList, { name = STAT_MASTERY or "精通", value = string.format("%.2f%%", masteryEffect) })
-  end
-
-  local versaDamageBonus = GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE)
-  table.insert(statsList, { name = STAT_VERSATILITY or "全能", value = string.format("%.2f%%", versaDamageBonus) })
-
-  -- ====================================================================
-  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
-  -- ====================================================================
-  -- -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
-  -- local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
-  -- table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
-
-  -- -- 🟢 加速 (Speed)
-  -- local speedPercent = GetCombatRatingBonus(CR_SPEED)
-  -- table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
-
-  -- -- 🟢 闪避 (Avoidance)
-  -- local avoidancePercent = GetCombatRatingBonus(CR_AVOIDANCE) + (GetAvoidance and GetAvoidance() or 0)
-  -- table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
-  -- ====================================================================
-  -- 3. 第三绿字/辅助属性 (包含修正后的全额吸血)
-  -- ====================================================================
-  -- 🟢 吸血 (Leech - 整合绿字与被动/附魔)
-  local leechPercent = GetCombatRatingBonus(CR_LIFESTEAL) + (GetLifesteal and GetLifesteal() or 0)
-  table.insert(statsList, { name = STAT_LIFESTEAL or "吸血", value = string.format("%.2f%%", leechPercent) })
-
-  -- 🟢 加速 (Speed)
-  local speedPercent = GetCombatRatingBonus(CR_SPEED)
-  table.insert(statsList, { name = STAT_SPEED or "加速", value = string.format("%.2f%%", speedPercent or 0) })
-
-  -- 🟢 修正版：闪避 (Avoidance)
-  -- 直接调用全局 GetAvoidance() 即可，它本身就是包含一切加成的最终全额百分比
-  local avoidancePercent = GetAvoidance() or 0
-  table.insert(statsList, { name = STAT_AVOIDANCE or "闪避", value = string.format("%.2f%%", avoidancePercent) })
-  return statsList
-end
-
--- 判断某个属性在当前职业/专精下是否为“核心推荐属性”
--- @param statType string: "STRENGTH", "AGILITY", "INTELLECT", "MASTERY" 等
--- @return boolean: 是否生效/是否推荐显示
-function addon:IsStatEffectiveForCurrentSpec(statType)
-  -- 1. 获取当前专精索引 (1 到 4)
-  local currentSpec = GetSpecialization()
-  if not currentSpec then return false end
-
-  -- 2. 获取专精的详细信息
-  -- id, name, description, icon, role, primaryStat = GetSpecializationInfo(currentSpec)
-  -- primaryStat 返回值：1 = 力量 (LE_UNIT_STAT_STRENGTH), 2 = 敏捷 (LE_UNIT_STAT_AGILITY), 4 = 智力 (LE_UNIT_STAT_INTELLECT)
-  local _, _, _, _, _, primaryStat = GetSpecializationInfo(currentSpec)
-
-  -- 3. 校验主属性拦截
-  if statType == "STRENGTH" and primaryStat ~= 1 then
-    return false -- 当前专精不需求力量
-  elseif statType == "AGILITY" and primaryStat ~= 2 then
-    return false -- 当前专精不需求敏捷
-  elseif statType == "INTELLECT" and primaryStat ~= 4 then
-    return false -- 当前专精不需求智力
-  end
-
-  -- 4. 校验精通拦截 (低等级小号如果还没学会精通，官方面板会隐藏)
-  if statType == "MASTERY" then
-    local isMasteryKnown = IsSpellKnown(GLOBAL_M_SPELLID or 8647) -- 8647 是暴雪各职业精通的通用底层法术ID
-    if not isMasteryKnown and UnitLevel("player") < 10 then
-      return false
-    end
-  end
-
-  -- 耐力、暴击、急速、全能、吸血、闪避、加速对所有职业都生效，默认全放行
-  return true
 end
