@@ -32,9 +32,9 @@ local WARBAND_BANK_SLOT_IDX = 12
 local isBankOpen = false
 local guid
 
-local DEBUG = true
-local function DP(...)
-  if DEBUG then
+addon.DEBUG = false
+function addon:DP(...)
+  if addon.DEBUG then
     print(...)
   end
 end
@@ -141,18 +141,6 @@ local function sync(f)
   character.updated = time()
   CharactersTrackerDB.CHARACTERS[guid] = character
 end
-
--- local function syncLogout()
---   local character = CharactersTrackerDB.CHARACTERS[guid] or {}
---   character.level = UnitLevel("player")
---   character.faction = select(2, UnitFactionGroup("player"))
---   character.zone = GetZoneText() or character.zone or ""
---   character.subZone = GetSubZoneText() or character.subZone or ""
---   character.mScore = C_ChallengeMode.GetOverallDungeonScore() or character.mScore or 0
---   character.gold = GetMoney() or character.gold or 0
---   character.updated = time()
---   CharactersTrackerDB.CHARACTERS[guid] = character
--- end
 
 local function ScanCharacterCurrencies()
   local character = CharactersTrackerDB.CHARACTERS[guid]
@@ -278,7 +266,7 @@ local function ScanBagSlots(bag)
       end
     end
   end
-  -- DP("P: " .. guid .. ", bag: " .. bag .. " has been scan.")
+  -- addon:DP("P: " .. guid .. ", bag: " .. bag .. " has been scan.")
 end
 
 local function ScanCharacterBags()
@@ -311,7 +299,7 @@ local function ScanBankSlots(bank)
       CharactersTrackerDB.WARBAND.BAGS[bank] = bankSlots
     end
   end
-  -- DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
+  -- addon:DP("P: " .. guid .. ", bank: " .. bank .. " has been scan.")
 end
 
 local function ScanCharacterBanks()
@@ -333,14 +321,14 @@ local function DataMigrationBeforeV1_2_0()
   -- local currentVersion = C_AddOns.GetAddOnMetadata(addonName, "Version") or ""
   local dataVersion = CharactersTrackerDB[DB_DATA_VERSION] or ""
   if dataVersion >= DATA_VERSION or "table" ~= type(CharactersTrackerDB) or next(CharactersTrackerDB) == nil then
-    DP("migration skip because data no need to migrate")
+    addon:DP("migration skip because data no need to migrate")
     return
   end
   -- if currentVersion < "1.1.2" then
   --   -- ClearOldWarbandBankData()
   --   return
   -- end
-  DP("start data migration...")
+  addon:DP("start data migration...")
   -- CharactersTrackerDB.version
   local migratedDb = {
     CHARACTERS = {},
@@ -368,7 +356,7 @@ local function DataMigrationBeforeV1_2_0()
       migratedDb.SETTINGS.CHARACTERS_ORDER = d or {}
     else
       -- nothing
-      DP(k)
+      addon:DP(k)
     end
   end
   migratedDb[DB_DATA_VERSION] = DATA_VERSION
@@ -404,20 +392,19 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     DbCheck()
     guid = UnitGUID("player")
     if not guid then return end
-    DP(guid)
+    addon:DP(guid)
     DataMigrationBeforeV1_2_0()
     InitCharacterCache()
-    -- ClearOldWarbandBankData()
     addon:InitWorkspace()
   elseif event == "BANKFRAME_OPENED" then
-    -- DP(event)
+    -- addon:DP(event)
     isBankOpen = true
     ScanCharacterBanks()
   elseif event == "BANKFRAME_CLOSED" then
-    -- DP(event)
+    -- addon:DP(event)
     isBankOpen = false
   elseif event == "BAG_UPDATE_DELAYED" then
-    -- DP(event)
+    -- addon:DP(event)
     ScanCharacterBags()
     if isBankOpen then
       ScanCharacterBanks()
@@ -452,7 +439,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
       end
     )
   elseif event == "PLAYER_LEVEL_UP" then
-    DP(event)
+    addon:DP(event)
     C_Timer.After(
       2,
       function()
@@ -465,8 +452,8 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
       end
     )
   elseif event == "PLAYER_LOGOUT" then
-    DP(event)
-    -- TODO
+    addon:DP(event)
+    -- TODO: because there will make not sure for the processing to completely finished, so keep there blank maybe the best choice.
   elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
     C_Timer.After(1.5, function()
       ScanCharacterStats()
@@ -503,8 +490,11 @@ end
 SLASH_WBCT1 = "/wbct"
 SLASH_WBCT2 = "/ct"
 SlashCmdList["WBCT"] = function(msg)
-  if msg == "bag" or msg == "inv" then
+  if "bag" == msg then
     addon:ToggleInventoryPanel()
+  elseif "debug" == msg then
+    addon.DEBUG = not addon.DEBUG
+    print(string.format("Debug Switcher: %s", addon.DEBUG and "On" or "Off"))
   else
     addon:Main()
   end

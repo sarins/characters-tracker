@@ -478,10 +478,6 @@ local META = {
   },
 }
 
-function addon:X()
-  print("Gui X() calling...")
-end
-
 -- stage 1 init, not sure for player has load
 function addon:InitWorkspace()
   self.GUI_FONTS = {}
@@ -592,7 +588,8 @@ end
 
 function addon:PureCharacterData(character)
   -- TODO delete
-  print(character.name .. " has been data deleted.")
+  print(character.name ..
+    " has been data deleted. [For 2.0.0 version, there will not delete character data, because data structuration issue, this functionality will release in following versions.]")
   addon:ClpRefreshGrid()
 end
 
@@ -849,7 +846,6 @@ function addon:ClpDynamicWidths()
   addon.CT_CLP_GRID_HEADER:SetWidth(totalWidth)
   addon.CT_CLP_GRID_SCROLL_CHILD:SetWidth(totalWidth)
 
-  print(totalWidth)
   return totalWidth
 end
 
