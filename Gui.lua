@@ -42,6 +42,7 @@ local TRACKED_CURRENCIES = {
 local TRACKED_CURRENCIES_CACHE = {}
 
 local COLORS = {
+  GOLD = "ffd100",
   PROGRESS = {
     DONE = "22C55E",
     UNLOCKED = "EAB308",
@@ -70,8 +71,6 @@ local function S2TA(c, f)
   end
   return ""
 end
-
--- /dump C_ChallengeMode.GetMapUIInfo(161)
 
 local function VAULTS_PROGRESS(c, t)
   if c and t and "table" == type(c.vaults) and "table" == type(c.vaults.rewards) then
@@ -1292,11 +1291,33 @@ function addon:ShowVaultsTooltip(anchor, character, t, label)
   GameTooltip:AddLine(label)
 
   local activities = character.vaults.activities and character.vaults.activities[t] or {}
+  local difficulties = character.vaults.difficulties and character.vaults.difficulties[t] or {}
+  local rewardItemLevels = character.vaults.rewardItemLevels and character.vaults.rewardItemLevels[t] or {}
 
-  for _, slot in ipairs(activities) do
+  for idx, slot in ipairs(activities) do
     if "table" == type(slot) then
       if slot.progress >= slot.threshold then
-        local left = string.format(L["VT_LEVEL"], slot.level)
+        local difficulty = difficulties[idx]
+        local rewardItemLevel = rewardItemLevels[idx]
+        local name = ""
+        if difficulty and difficulty.name then
+          if difficulty.isChallengeMode or difficulty.displayMythic then
+            name = string.format("%s%s|r", ITEM_QUALITY_COLORS[4].hex, difficulty.name)
+          elseif difficulty.isHeroic or difficulty.displayHeroic then
+            name = string.format("%s%s|r", ITEM_QUALITY_COLORS[3].hex, difficulty.name)
+          else
+            name = difficulty.name
+          end
+        end
+        local level = ""
+        if slot.level > 0 then
+          level = string.format(L["VT_LEVEL"], slot.level)
+        end
+        local itemLevel = ""
+        if rewardItemLevel and rewardItemLevel > 0 then
+          itemLevel = string.format("|cff%s%s|r", COLORS.GOLD, rewardItemLevel)
+        end
+        local left = strtrim(string.format("%s %s %s", name, level, itemLevel))
         local right = string.format("|cff%s(%s/%s)|r", COLORS.PROGRESS.DONE, slot.threshold, slot.threshold)
         GameTooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
       elseif slot.progress < 1 then

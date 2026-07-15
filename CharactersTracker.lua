@@ -124,8 +124,7 @@ local function ScanCharacterStats()
   stats.secondary["HASTE"] = (GetHaste() or 0)                                             --急速
   stats.secondary["MASTERY"] = (GetMasteryEffect() or 0)                                   --精通
   stats.secondary["VERSATILITY"] = (GetCombatRatingBonus(CR_VERSATILITY_DAMAGE_DONE) or 0) --全能
-  stats.secondary["LIFESTEAL"] = (GetCombatRatingBonus(CR_LIFESTEAL) or 0) +
-      (GetLifesteal and GetLifesteal() or 0)                                               --吸血
+  stats.secondary["LIFESTEAL"] = (GetCombatRatingBonus(CR_LIFESTEAL) or 0)                 --吸血
   stats.secondary["SPEED"] = (GetCombatRatingBonus(CR_SPEED) or 0)                         --加速
   stats.secondary["AVOIDANCE"] = (GetAvoidance() or 0)                                     --闪避
 
@@ -211,6 +210,8 @@ local function ScanCharacterRewards()
     if ok and activities then
       local vaults = {
         activities = {},
+        difficulties = {},
+        rewardItemLevels = {},
         rewards = {},
         levels = {}
       }
@@ -218,6 +219,8 @@ local function ScanCharacterRewards()
         if slot and slot.type and slot.index then
           -- init
           vaults.activities[slot.type] = vaults.activities[slot.type] or {}
+          vaults.difficulties[slot.type] = vaults.difficulties[slot.type] or {}
+          vaults.rewardItemLevels[slot.type] = vaults.rewardItemLevels[slot.type] or {}
           vaults.rewards[slot.type] = vaults.rewards[slot.type] or 0
           vaults.levels[slot.type] = vaults.levels[slot.type] or {}
           -- assign
@@ -225,6 +228,49 @@ local function ScanCharacterRewards()
           if slot.progress >= slot.threshold then
             vaults.rewards[slot.type] = vaults.rewards[slot.type] + 1
             vaults.levels[slot.type][vaults.rewards[slot.type]] = slot.level
+            -- try to explain when vault unlocked but the level is 0 situation.
+            if slot.activityTierID > 0 then
+              local difficultyId = C_WeeklyRewards.GetDifficultyIDForActivityTier(slot.activityTierID)
+              if difficultyId and difficultyId > 0 then
+                -- name               string - Difficulty name, e.g. "10 Player (Heroic)"
+                -- groupType          string - Group type appropriate for this difficulty; "party" or "raid".
+                -- isHeroic           boolean - true if this is a heroic difficulty, false otherwise.
+                -- isChallengeMode    boolean - true if this is challenge mode difficulty, false otherwise.
+                -- displayHeroic      boolean - display the Heroic skull icon on the instance banner of the minimap
+                -- displayMythic      boolean - display the Mythic skull icon on the instance banner of the minimap
+                -- toggleDifficultyID number - difficulty ID of the corresponding heroic/non-heroic difficulty for 10/25-man raids, if one exists.
+                -- isLFR              boolean - true if this is looking for raid difficulty, false otherwise.
+                -- minPlayers         number - minimum players needed.
+                -- maxPlayers         number - maximum players allowed.
+                -- isUserSelectable   boolean
+                local name, groupType,
+                isHeroic, isChallengeMode,
+                displayHeroic, displayMythic,
+                toggleDifficultyID, isLFR,
+                minPlayers, maxPlayers, isUserSelectable = GetDifficultyInfo(difficultyId)
+                if name then
+                  vaults.difficulties[slot.type][slot.index] = {
+                    name = name,
+                    groupType = groupType,
+                    isHeroic = isHeroic,
+                    isChallengeMode = isChallengeMode,
+                    displayHeroic = displayHeroic,
+                    displayMythic = displayMythic,
+                    toggleDifficultyID = toggleDifficultyID,
+                    isLFR = isLFR,
+                    minPlayers = minPlayers,
+                    maxPlayers = maxPlayers,
+                    isUserSelectable = isUserSelectable,
+                  }
+                end
+              end
+              -- try to get item level of rewards, slot id may not be empty
+              local exampleLink = C_WeeklyRewards.GetExampleRewardItemHyperlinks(slot.id)
+              if exampleLink then
+                local _, _, _, itemLevel = C_Item.GetItemInfo(exampleLink)
+                vaults.rewardItemLevels[slot.type][slot.index] = itemLevel
+              end
+            end
           end
         end
       end
