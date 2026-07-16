@@ -11,6 +11,10 @@ local L = CharactersTracker_Locale
 -- CGP = Character Gear Panel
 -- ====================================================================
 
+local CT_CLP_FRAME_LEVEL = 120
+
+local CT_INVENTORY_PANEL_LEVEL = 110
+
 local MAX_LEVEL_OF_CHARACTER = GetMaxLevelForPlayerExpansion()
 
 local BASIC_STATS_LAYOUT = { "STRENGTH", "AGILITY", "INTELLECT", "STAMINA", "ARMOR" }
@@ -235,21 +239,25 @@ local CT_THEME = {
       },
       CHOICE = {
         TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\characters.tga",
+        TEXTURE_ACTIVE = "Interface\\AddOns\\CharactersTracker\\media\\characters-active.tga",
         SIZE = { 16, 16 },
         POINT = { -136, 0 }
       },
       CURRENCIES = {
         TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\detail.tga",
+        TEXTURE_ACTIVE = "Interface\\AddOns\\CharactersTracker\\media\\detail-active.tga",
         SIZE = { 16, 16 },
         POINT = { -112, 0 }
       },
       SETTINGS = {
         TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\gear.tga",
+        TEXTURE_ACTIVE = "Interface\\AddOns\\CharactersTracker\\media\\gear-active.tga",
         SIZE = { 16, 16 },
         POINT = { -88, 0 }
       },
       LOCKER = {
         TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\lock.tga",
+        TEXTURE_ACTIVE = "Interface\\AddOns\\CharactersTracker\\media\\lock-active.tga",
         SIZE = { 16, 16 },
         POINT = { -64, 0 }
       },
@@ -325,7 +333,7 @@ local CT_THEME = {
         SPACING = 8,
         CHECKER = {
           SIZE            = { 12, 12 },
-          CHECKED_COLOR   = { 0.20, 0.75, 0.40, 1.00 }, -- 已勾选绿
+          CHECKED_COLOR   = { 0.20, 0.75, 0.40, 1.00 }, -- 已勾选绿 #33BF66
           UNCHECKED_COLOR = { 0.25, 0.25, 0.25, 1.00 }, -- 未勾选灰
         },
         ICON    = {
@@ -604,7 +612,10 @@ function addon:StartMenuDismissTimer(button)
   dissmisser:SetScript("OnUpdate", function(_, delta)
     elapsed = elapsed + delta
     if elapsed >= 0.2 then
-      if button then button.menu:Hide() end
+      if button then
+        button.icon:SetTexture(button.iconTexture)
+        button.menu:Hide()
+      end
       dissmisser:SetScript("OnUpdate", nil)
     end
   end)
@@ -792,10 +803,22 @@ end
 function addon:Util_CreateButton(name, parent, texture, width, height)
   local btn = CreateFrame("Button", name, parent)
   btn:SetSize(width, height)
-  local icon = btn:CreateTexture(nil, "ARTWORK")
-  icon:SetPoint("CENTER")
-  icon:SetSize(width, height)
-  icon:SetTexture(texture)
+  btn.icon = btn:CreateTexture(nil, "ARTWORK")
+  btn.icon:SetPoint("CENTER")
+  btn.icon:SetSize(width, height)
+  btn.icon:SetTexture(texture)
+  return btn
+end
+
+function addon:Util_CreateActiveButton(name, parent, texture, textureActive, width, height)
+  local btn = CreateFrame("Button", name, parent)
+  btn:SetSize(width, height)
+  btn.icon = btn:CreateTexture(nil, "ARTWORK")
+  btn.icon:SetPoint("CENTER")
+  btn.icon:SetSize(width, height)
+  btn.icon:SetTexture(texture)
+  btn.iconTexture = texture
+  btn.iconTextureActive = textureActive
   return btn
 end
 
@@ -886,22 +909,29 @@ function addon:ClpBanner()
     self.CT_CLP:Hide()
   end)
 
-  local choice = addon:Util_CreateButton(
+  local choice = addon:Util_CreateActiveButton(
     "CT_CHARACTERS_LIST_PANEL_BANNER_CHOICE",
     banner,
     CT_THEME.CLP.BANNER.CHOICE.TEXTURE,
+    CT_THEME.CLP.BANNER.CHOICE.TEXTURE_ACTIVE,
     unpack(CT_THEME.CLP.BANNER.CHOICE.SIZE)
   )
   choice:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.CHOICE.POINT))
   choice:SetScript("OnClick", function()
     addon.CT_CLP_STATUS.choosable = not addon.CT_CLP_STATUS.choosable
+    if addon.CT_CLP_STATUS.choosable then
+      choice.icon:SetTexture(choice.iconTextureActive)
+    else
+      choice.icon:SetTexture(choice.iconTexture)
+    end
     addon:ClpRefreshGrid()
   end)
 
-  local currencies = addon:Util_CreateButton(
+  local currencies = addon:Util_CreateActiveButton(
     "CT_CHARACTERS_LIST_PANEL_BANNER_CURRENCIES",
     banner,
     CT_THEME.CLP.BANNER.CURRENCIES.TEXTURE,
+    CT_THEME.CLP.BANNER.CURRENCIES.TEXTURE_ACTIVE,
     unpack(CT_THEME.CLP.BANNER.CURRENCIES.SIZE)
   )
   currencies:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.CURRENCIES.POINT))
@@ -909,15 +939,17 @@ function addon:ClpBanner()
   currencies:SetScript("OnEnter", function()
     addon:CancelMenuDimissTimer(currencies)
     addon:ShowCurrenciesMenu(currencies)
+    currencies.icon:SetTexture(currencies.iconTextureActive)
   end)
   currencies:SetScript("OnLeave", function()
     addon:StartMenuDismissTimer(currencies)
   end)
 
-  local settings = addon:Util_CreateButton(
+  local settings = addon:Util_CreateActiveButton(
     "CT_CHARACTERS_LIST_PANEL_BANNER_SETTINGS",
     banner,
     CT_THEME.CLP.BANNER.SETTINGS.TEXTURE,
+    CT_THEME.CLP.BANNER.SETTINGS.TEXTURE_ACTIVE,
     unpack(CT_THEME.CLP.BANNER.SETTINGS.SIZE)
   )
   settings:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.SETTINGS.POINT))
@@ -925,20 +957,27 @@ function addon:ClpBanner()
   settings:SetScript("OnEnter", function()
     addon:CancelMenuDimissTimer(settings)
     addon:ShowSettingsMenu(settings)
+    settings.icon:SetTexture(settings.iconTextureActive)
   end)
   settings:SetScript("OnLeave", function()
     addon:StartMenuDismissTimer(settings)
   end)
 
-  local locker = addon:Util_CreateButton(
+  local locker = addon:Util_CreateActiveButton(
     "CT_CHARACTERS_LIST_PANEL_BANNER_LOCKER",
     banner,
     CT_THEME.CLP.BANNER.LOCKER.TEXTURE,
+    CT_THEME.CLP.BANNER.LOCKER.TEXTURE_ACTIVE,
     unpack(CT_THEME.CLP.BANNER.LOCKER.SIZE)
   )
   locker:SetPoint("RIGHT", banner, "RIGHT", unpack(CT_THEME.CLP.BANNER.LOCKER.POINT))
   locker:SetScript("OnClick", function()
     addon.CT_CLP_STATUS.operationable = not addon.CT_CLP_STATUS.operationable
+    if addon.CT_CLP_STATUS.operationable then
+      locker.icon:SetTexture(locker.iconTextureActive)
+    else
+      locker.icon:SetTexture(locker.iconTexture)
+    end
     addon:ClpRefreshGrid()
   end)
 end
@@ -1066,6 +1105,8 @@ function addon:ClpRefreshGrid()
       else
         row.bg:SetColorTexture(unpack(CT_THEME.CLP.GRID.ROW.BG.EVEN))
       end
+      -- row:SetAlpha(0.15)
+      -- print(row:GetAlpha())
 
       local columnIdx = 0
       local cells = grid[_rid] or {}
@@ -1213,6 +1254,7 @@ function addon:ClpMain()
 
   clp:SetHeight(CT_THEME.CLP.HEIGHT)
   clp:SetFrameStrata("MEDIUM")
+  clp:SetFrameLevel(CT_CLP_FRAME_LEVEL)
   -- clp:SetScript("OnHide", function()
   --   addon:HideAllMenus()
   -- end)
@@ -1846,6 +1888,7 @@ function addon:CreateInventoryPanel()
   inventoryPanel:Hide()
 
   inventoryPanel:SetFrameStrata("MEDIUM")
+  inventoryPanel:SetFrameLevel(CT_INVENTORY_PANEL_LEVEL)
   inventoryPanel:SetSize(CT_THEME.INVENTORY_PANEL.WIDTH, CT_THEME.INVENTORY_PANEL.HEIGHT)
 
   inventoryPanel.bg = inventoryPanel:CreateTexture(nil, "BACKGROUND")

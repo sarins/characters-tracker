@@ -2,7 +2,7 @@
 ## Title: CharactersTracker
 ## Notes: CharactersTracker is a lightweight, cross-character asset and progression tracking addon designed specifically for modern World of Warcraft. It automatically monitors and aggregates your characters' item levels, Great Vault progression across all three tracks, character-specific (non-account-wide) currencies, and item inventories across all bags, personal banks, and Warband banks. Controlled via a draggable floating action button, it eliminates the need for constant character-logging, giving you a bird's-eye view of your entire Warband at a glance. 
 ## Notes-zhCN: CharactersTracker 是一款专为《魔兽世界》现代版本打造的轻量级、跨角色资产与进度追踪插件。它能够自动记录并整合你账号下所有角色的装备等级、宏伟宝库（低保）三线进度、未战网共享的常用货币、以及背包与银行（含战团银行）中的物品资产。通过一个可自由拖拽的独立悬浮按钮，让你无需反复切号，即可对全战团的物资与进度了如指掌。
-## Version: 2.0.0
+## Version: 2.0.1
 ## SavedVariables: CharactersTrackerDB
 ## IconTexTure: Interface\AddOns\CharactersTracker\media\icon.tga
 
