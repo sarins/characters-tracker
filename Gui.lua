@@ -297,6 +297,10 @@ local CT_THEME = {
           CHECKED_COLOR   = { 0.20, 0.75, 0.40, 1.00 }, -- 已勾选绿
           UNCHECKED_COLOR = { 0.18, 0.21, 0.26, 0.8 },  -- 未勾选灰
         },
+        DRAG = {
+          TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\drag.tga",
+          SIZE = { 16, 16 },
+        },
         CURRENCIES = {
           TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\storage.tga",
           SIZE = { 16, 16 },
@@ -464,6 +468,7 @@ local META = {
   CLP = {
     COLS = {
       { id = "VISIBLE",    label = L["CLP_LABEL_VISIBLE"],    formatter = "",                          fixed = true,  align = "CENTER", width = 80 },
+      { id = "DRAG",       label = L["CLP_LABEL_DRAG"],       formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
       { id = "NAME",       label = L["CLP_LABEL_NAME"],       formatter = FORMATTERS.NAME,             fixed = true,  align = "LEFT",   padding = 16 },
       { id = "CLASS",      label = L["CLP_LABEL_CLASS"],      formatter = FORMATTERS.CLASS,            fixed = false, align = "CENTER" },
       { id = "REALM",      label = L["CLP_LABEL_REALM"],      formatter = FORMATTERS.REALM,            fixed = false, align = "CENTER" },
@@ -831,7 +836,7 @@ function addon:ClpDynamicWidths()
 
   local totalWidth = 0
   for _, meta in ipairs(META.CLP.COLS) do
-    if meta.id == "VISIBLE" and not self.CT_CLP_STATUS.choosable then
+    if (meta.id == "VISIBLE" or meta.id == "DRAG") and not self.CT_CLP_STATUS.choosable then
       widths[meta.id] = 0
     elseif meta.id == "OPERATION" and not self.CT_CLP_STATUS.operationable then
       widths[meta.id] = 0
@@ -1062,6 +1067,56 @@ end
 function addon:ClpGridRow()
 end
 
+function addon:ClpOnRowDropped(sourceRow)
+  local rows = self.CT_CLP_STATUS.rows
+  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
+
+  local _, mouseY = GetCursorPosition()
+  local scale = UIParent:GetEffectiveScale()
+  mouseY = mouseY / scale
+  local targetRow = nil
+  local isBefore = false
+
+  for _, row in pairs(rows) do
+    if row ~= sourceRow and row:IsVisible() then
+      local _, yAxisOfRow, _, rowHeight = row:GetRect()
+      if yAxisOfRow then
+        if mouseY >= yAxisOfRow and mouseY <= (yAxisOfRow + rowHeight) then
+          targetRow = row
+          local centerY = yAxisOfRow + (rowHeight / 2)
+          if mouseY > centerY then
+            isBefore = true  -- 偏上，插到它前面
+          else
+            isBefore = false -- 偏下，插到它后面
+          end
+          break
+        end
+      end
+    end
+  end
+
+  if targetRow then
+    local sourceIdx = tIndexOf(orderKeeper, sourceRow.characterId)
+    local targetIdx = tIndexOf(orderKeeper, targetRow.characterId)
+
+    if sourceIdx and targetIdx then
+      local characterId = table.remove(orderKeeper, sourceIdx)
+      local newIdx = targetIdx
+      if isBefore then
+        newIdx = targetIdx - 1
+      else
+        newIdx = targetIdx + 1
+      end
+
+      if newIdx < 1 then newIdx = 1 end
+      if newIdx > #orderKeeper + 1 then newIdx = #orderKeeper + 1 end
+
+      table.insert(orderKeeper, newIdx, characterId)
+    end
+    addon:ClpRefreshGrid()
+  end
+end
+
 function addon:ClpRefreshGrid()
   local xw = self:ClpDynamicWidths()
   addon:ClpRefreshGridHeader()
@@ -1094,6 +1149,7 @@ function addon:ClpRefreshGrid()
         row = CreateFrame("Frame", nil, self.CT_CLP_GRID_SCROLL_CHILD, "HorizontalLayoutFrame")
         rows[_rid] = row
         row.bg = row:CreateTexture(nil, "BACKGROUND")
+        row.characterId = _rid
       end
       row.layoutIndex = rowIdx
       row.spacing = 0
@@ -1105,8 +1161,6 @@ function addon:ClpRefreshGrid()
       else
         row.bg:SetColorTexture(unpack(CT_THEME.CLP.GRID.ROW.BG.EVEN))
       end
-      -- row:SetAlpha(0.15)
-      -- print(row:GetAlpha())
 
       local columnIdx = 0
       local cells = grid[_rid] or {}
@@ -1135,6 +1189,38 @@ function addon:ClpRefreshGrid()
             cell.cb:SetChecked(hiddenCharacters[_rid] or false)
             cell.cb:SetScript("OnClick", function(selfBtn)
               hiddenCharacters[_rid] = selfBtn:GetChecked() and true or nil
+            end)
+            cell:Show()
+          elseif "DRAG" == meta.id then
+            if not cell then
+              cell = CreateFrame("Frame", nil, row, "BackdropTemplate")
+              cells[meta.id] = cell
+              cell.drag = addon:Util_CreateButton(
+                nil,
+                cell,
+                CT_THEME.CLP.GRID.CELL.DRAG.TEXTURE,
+                unpack(CT_THEME.CLP.GRID.CELL.DRAG.SIZE)
+              )
+              cell.drag:RegisterForDrag("LeftButton")
+            end
+            cell:SetSize(widths[meta.id], CT_THEME.CLP.GRID.ROW.HEIGHT)
+            cell.drag:SetPoint("CENTER")
+            cell.drag:SetScript("OnDragStart", function(_self)
+              local shadowRow = self.CT_CLP_DRAG_SHADOW_ROW
+              shadowRow:SetWidth(widths[meta.id] + widths["NAME"])
+              shadowRow.text:SetText(FORMATTERS.NAME(character))
+              shadowRow:Show()
+              row:SetAlpha(0.15)
+              self.CT_CLP_STATUS.isDragging = true
+            end)
+            cell.drag:SetScript("OnDragStop", function(_self)
+              local shadowRow = self.CT_CLP_DRAG_SHADOW_ROW
+              shadowRow:Hide()
+              row:SetAlpha(1.0)
+              if addon.CT_CLP_STATUS.isDragging then
+                self.CT_CLP_STATUS.isDragging = false
+                addon:ClpOnRowDropped(row)
+              end
             end)
             cell:Show()
           elseif "CURRENCIES" == meta.id then
@@ -1247,6 +1333,7 @@ function addon:ClpMain()
     settingsItems = {},
     currenciesItems = {},
     dismissers = {},
+    isDragging = false,
   }
 
   local clp = addon:Util_CreateBaseWindow("CT_CHARACTERS_LIST_PANEL", UIParent)
@@ -1262,6 +1349,36 @@ function addon:ClpMain()
   local bg = clp:CreateTexture(nil, "BACKGROUND")
   bg:SetAllPoints()
   bg:SetColorTexture(unpack(CT_THEME.CLP.BG.COLOR))
+
+  -- dragable shadow row begin
+  local shadowRow = CreateFrame("Frame", "CT_CHARACTERS_LIST_PANEL_DRAG_SHADOW_ROW", UIParent, "BackdropTemplate")
+  self.CT_CLP_DRAG_SHADOW_ROW = shadowRow
+  shadowRow:SetFrameStrata("TOOLTIP")
+  shadowRow:SetHeight(CT_THEME.CLP.GRID.ROW.HEIGHT)
+  shadowRow:Hide()
+
+  shadowRow.bg = shadowRow:CreateTexture(nil, "BACKGROUND")
+  shadowRow.bg:SetAllPoints()
+  shadowRow.bg:SetColorTexture(unpack(CT_THEME.CLP.BG.COLOR))
+
+  shadowRow.drag = addon:Util_CreateButton(
+    nil,
+    shadowRow,
+    CT_THEME.CLP.GRID.CELL.DRAG.TEXTURE,
+    unpack(CT_THEME.CLP.GRID.CELL.DRAG.SIZE)
+  )
+  shadowRow.drag:SetPoint("LEFT", shadowRow, "LEFT", 16, 0)
+  shadowRow.text = shadowRow:CreateFontString(nil, "OVERLAY")
+  shadowRow.text:SetFontObject(self.GUI_FONTS["SMALL"])
+  shadowRow.text:SetPoint("LEFT", shadowRow, "LEFT", 64, 0)
+
+  shadowRow:SetScript("OnUpdate", function(_self)
+    local mouseX, mouseY = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    _self:ClearAllPoints()
+    _self:SetPoint("CENTER", UIParent, "BOTTOMLEFT", mouseX / scale, mouseY / scale)
+  end)
+  -- dragable shadow row end
 
   addon:ClpBanner()
   addon:ClpFooter()

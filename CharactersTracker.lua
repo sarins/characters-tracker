@@ -73,6 +73,7 @@ end
 
 local function InitCharacterCache()
   local character = CharactersTrackerDB.CHARACTERS[guid] or {}
+  local orderKeeper = CharactersTrackerDB.SETTINGS.CHARACTERS_ORDER
 
   character.name = UnitName("player")
   character.class = select(2, UnitClass("player"))
@@ -92,6 +93,10 @@ local function InitCharacterCache()
   character.stats = character.stats or { basic = {}, secondary = {} }
   character.updated = time()
   CharactersTrackerDB.CHARACTERS[guid] = character
+
+  if not tIndexOf(orderKeeper, guid) then
+    table.insert(orderKeeper, guid)
+  end
 end
 
 local function ScanCharacterStats()

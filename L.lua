@@ -45,6 +45,7 @@ L["INV_LOC_WARBAND_BANK"] = "Warband Bank"
 L["INV_LOC_OTHERS"] = "Others"
 -- CLP Labels
 L["CLP_LABEL_VISIBLE"] = "Hide"
+L["CLP_LABEL_DRAG"] = "Drag"
 L["CLP_LABEL_NAME"] = "Name"
 L["CLP_LABEL_CLASS"] = "Class"
 L["CLP_LABEL_REALM"] = "Realm"
@@ -120,6 +121,7 @@ if currentLocale == "zhCN" then
   L["INV_LOC_OTHERS"] = "其他"
   -- CLP Labels
   L["CLP_LABEL_VISIBLE"] = "隐藏"
+  L["CLP_LABEL_DRAG"] = "拖动"
   L["CLP_LABEL_NAME"] = "名称"
   L["CLP_LABEL_CLASS"] = "职业"
   L["CLP_LABEL_REALM"] = "服务器"
