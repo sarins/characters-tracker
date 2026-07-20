@@ -1812,24 +1812,28 @@ function addon:ShowCgp(id)
     local gear = character.gear[slotId]
 
     if gear and gear.link then
-      local texture = C_Item.GetItemIconByID(gear.link)
-      slot.icon:SetTexture(texture or 134400)
+      slot.icon:SetTexture(gear.icon)
       slot.itemLink = gear.link
 
-      local quality = C_Item.GetItemQualityByID(gear.link)
-      if quality and quality > 1 then
-        local r, g, b = C_Item.GetItemQualityColor(quality)
-        slot.quality:SetColorTexture(r, g, b, 1)
+      if gear.quality and gear.color then
+        slot.quality:SetColorTexture(unpack(gear.color))
+        slot.quality:Show()
       else
         slot.quality:SetColorTexture(unpack(CT_THEME.CGP.SLOT.QUALITY.COLOR))
+        slot.quality:Hide()
       end
-      slot.quality:Show()
-      slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
-      slot.itemLevel:SetText(gear.level or "")
 
-      slot:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetHyperlink(self.itemLink)
+      if gear.level and gear.level > 0 then
+        slot.itemLevel:SetTextColor(unpack(CT_THEME.CGP.SLOT.ITEM_LEVEL.COLOR))
+        slot.itemLevel:SetText(gear.level or "")
+        slot.itemLevel:Show()
+      else
+        slot.itemLevel:Hide()
+      end
+
+      slot:SetScript("OnEnter", function(_self)
+        GameTooltip:SetOwner(_self, "ANCHOR_RIGHT")
+        GameTooltip:SetHyperlink(_self.itemLink)
         GameTooltip:Show()
       end)
     else

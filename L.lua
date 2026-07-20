@@ -85,6 +85,8 @@ L["CGP_STAT_AVOIDANCE"] = "Avoidance"
 L["CT_CONFIRM_REMOVE_CHARACTER_DATA"] = "Delete all cached data for %s?\nThis data will be permanently lost."
 L["CT_CONFIRM_Y"] = "Confirm"
 L["CT_CONFIRM_N"] = "Cancel"
+-- Binding keys description
+L["CT_BINDING_DESC"] = "Show/Hide the Characters Tracker Panel"
 
 -- ====================================================================
 -- 简体中文环境 (zhCN)
@@ -161,4 +163,6 @@ if currentLocale == "zhCN" then
   L["CT_CONFIRM_REMOVE_CHARACTER_DATA"] = "确定要清除角色 %s 的所有缓存数据吗？\n该操作执行后该角色的数据将无法恢复。"
   L["CT_CONFIRM_Y"] = "确定"
   L["CT_CONFIRM_N"] = "取消"
+  -- Binding keys description
+  L["CT_BINDING_DESC"] = "显示/隐藏 角色追踪窗口"
 end

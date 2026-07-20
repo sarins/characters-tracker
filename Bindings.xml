@@ -1,0 +1,5 @@
+<Bindings>
+  <Binding name="CHARACTERS_TRACKER" header="CHARACTERS_TRACKER" category="ADDONS">
+    CharactersTrackerStub:Main();
+  </Binding>
+</Bindings>

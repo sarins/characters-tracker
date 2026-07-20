@@ -2,6 +2,12 @@
 -- CharactersTracker, All Rights Reserved unless otherwise explicitly stated.
 -- ====================================================================
 local addonName, addon = ...
+_G["CharactersTrackerStub"] = addon
+
+local L = CharactersTracker_Locale
+
+BINDING_NAME_CHARACTERS_TRACKER = L["CT_BINDING_DESC"]
+BINDING_HEADER_CHARACTERS_TRACKER = addonName
 
 local DB_DATA_VERSION = "DB_VERSION"
 local DATA_VERSION = "2.0.0"
@@ -173,22 +179,29 @@ local function ScanCharacterGears()
   local gearCount = 0
 
   for _, slotId in ipairs(SCAN_SLOTS) do
-    local itemLink = GetInventoryItemLink("player", slotId)
-    if itemLink then
-      local itemLevel = C_Item.GetDetailedItemLevelInfo(itemLink) or 0
-      local _, enchantId = string.split(":", itemLink)
-      local hasEnchant = (enchantId and enchantId ~= "" and enchantId ~= "0") and true or false
+    local link = GetInventoryItemLink("player", slotId)
+    if link then
+      local item = Item:CreateFromItemLink(link)
+      item:ContinueOnItemLoad(function()
+        local level = item:GetCurrentItemLevel() or 0
+        local icon = item:GetItemIcon()
+        local quality = item:GetItemQuality()
+        local r, g, b, _ = C_Item.GetItemQualityColor(quality)
+        local color = { r, g, b, 1 }
 
-      character.gear[slotId] = {
-        link = itemLink,
-        level = itemLevel,
-        enchant = hasEnchant
-      }
-      -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
-      if slotId ~= 4 and slotId ~= 19 and itemLevel > 0 then
-        sumLevel = sumLevel + itemLevel
-        gearCount = gearCount + 1
-      end
+        character.gear[slotId] = {
+          link = link,
+          level = level,
+          icon = icon,
+          quality = quality,
+          color = color,
+        }
+        -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
+        if slotId ~= 4 and slotId ~= 19 and level > 0 then
+          sumLevel = sumLevel + level
+          gearCount = gearCount + 1
+        end
+      end)
     else
       character.gear[slotId] = {}
     end
