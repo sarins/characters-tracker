@@ -28,30 +28,23 @@ local GEAR_SLOTS_LAYOUT = {
 }
 local GEAR_SLOTS_MAPPING = { 1, 2, 3, 15, 5, 4, 19, 9, 16, 17, 10, 6, 7, 8, 11, 12, 13, 14 }
 
-local TRACKED_CURRENCIES = {
-  3028, -- 修复的宝匣钥匙
-  3310, -- 宝匣钥匙碎片
-  2803, -- 晦幽铸币
-  3356, -- 未被污染的法力水晶
-  3418, -- 晦暗虚空核心
-  3378, -- 黎明之光法力熔剂
-  3383, -- 冒险者曙光纹章
-  3341, -- 老兵曙光纹章
-  3343, -- 勇士曙光纹章
-  3345, -- 英雄曙光纹章
-  3347, -- 神话曙光纹章
-  1792, -- 荣誉点数
-  1602, -- 征服点数
-}
 local TRACKED_CURRENCIES_CACHE = {}
 
 local COLORS = {
+  DARK_GOLD = "E6CC80",
   GOLD = "ffd100",
+  WHITE = "ffffff",
   PROGRESS = {
     DONE = "22C55E",
     UNLOCKED = "EAB308",
     LOCKED = "FFFFFF",
-  }
+  },
+  TIPS = {
+    ERROR = "FF2020",
+    WARN = "FF8000",
+    SUCCESS = "1EFF00",
+    INFO = "0070DD",
+  },
 }
 
 StaticPopupDialogs["CONFIRM_PURE_CHARACTER_DATA"] = {
@@ -72,6 +65,24 @@ local function S2TA(c, f)
       return "< 1m"
     end
     return string.format(SecondsToTimeAbbrev(delta))
+  end
+  return ""
+end
+
+local function LIMIT_COLORFUL(c, l)
+  if "number" == type(c) and "number" == type(l) then
+    local count = math.abs(c)
+    local limit = math.abs(l)
+    local p = count / limit
+    if p > 0.9 then
+      return string.format("|cff%s%s|r", COLORS.TIPS.ERROR, count)
+    elseif p > 0.75 then
+      return string.format("|cff%s%s|r", COLORS.TIPS.WARN, count)
+    elseif p > 0.5 then
+      return string.format("|cff%s%s|r", COLORS.TIPS.SUCCESS, count)
+    else
+      return string.format("|cff%s%s|r", COLORS.WHITE, count)
+    end
   end
   return ""
 end
@@ -186,6 +197,9 @@ local FORMATTERS = {
   end,
   GOLD = function(c)
     return c and ((c.gold or 0) / 10000)
+  end,
+  PVP = function(c)
+    return ""
   end,
   UPDATED2TA = function(c)
     return S2TA(c, "updated")
@@ -427,6 +441,7 @@ local CT_THEME = {
       ITEM_LEVEL = {
         FONT = "MINI",
         PADDING = 2,
+        -- COLOR = { 0.90, 0.80, 0.50 },
         COLOR = { 1, 1, 1 },
       }
     }
@@ -483,11 +498,50 @@ local META = {
       { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
       { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
       { id = "CURRENCIES", label = L["CLP_LABEL_CURRENCIES"], formatter = "",                          fixed = false, align = "CENTER", width = 64 },
-      { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = "",                          fixed = false, align = "CENTER" },
+      { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = FORMATTERS.PVP,              fixed = false, align = "CENTER" },
       { id = "UPDATED",    label = L["CLP_LABEL_UPDATED"],    formatter = FORMATTERS.UPDATED2TA,       fixed = false, align = "CENTER" },
       { id = "OPERATION",  label = L["CLP_LABEL_OPERATION"],  formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
     },
   },
+}
+
+addon.TRACKED_CURRENCIES = {
+  -- Midnight
+  3319, -- Twilight's Blade Insignia
+  3316, -- Voidlight Marl
+  3376, -- Shard of Dundun
+  3377, -- Unalloyed Abundance
+  3379, -- Brimming Arcana
+  3385, -- Luminous Dust
+  3392, -- Remnant of Anguish
+  3400, -- Uncontaminated Void Sample
+  3373, -- Angler Pearls
+  3393, -- Illusionary Coin
+  3405, -- Field Accolade
+  3256, -- Artisan Alchemist's Moxie
+  3257, -- Artisan Blacksmith's Moxie
+  3258, -- Artisan Enchanter's Moxie
+  3259, -- Artisan Engineer's Moxie
+  3260, -- Artisan Herbalist's Moxie
+  3261, -- Artisan Scribe's Moxie
+  3262, -- Artisan Jewelcrafter's Moxie
+  3263, -- Artisan Leatherworker's Moxie
+  3264, -- Artisan Miner's Moxie
+  3265, -- Artisan Skinner's Moxie
+  3266, -- Artisan Tailor's Moxie
+  3028, -- Restored Coffer Key
+  3310, -- Coffer Key Shards
+  3212, -- Radiant Spark Dust
+  3378, -- Dawnlight Manaflux
+  3383, -- Adventurer Dawncrest
+  3341, -- Veteran Dawncrest
+  3343, -- Champion Dawncrest
+  3345, -- Hero Dawncrest
+  3347, -- Myth Dawncrest
+  3418, -- Nebulous Voidcore
+  --- below are PvP currencies
+  1792, -- 荣誉点数
+  1602, -- 征服点数
 }
 
 -- stage 1 init, not sure for player has load
@@ -516,7 +570,7 @@ end
 -- stage 2 init, the player has been entering into the world.
 function addon:InitEnteringWorld()
   -- Cache the currencies name and icon for the dropdown menu
-  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+  for _, currencyID in ipairs(addon.TRACKED_CURRENCIES) do
     local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
     if info then
       TRACKED_CURRENCIES_CACHE[currencyID] = {
@@ -741,7 +795,7 @@ function addon:ShowCurrenciesMenu(anchor)
 
   for _, item in ipairs(currenciesItems) do item:Hide() end
 
-  for i, currencyId in ipairs(TRACKED_CURRENCIES) do
+  for i, currencyId in ipairs(addon.TRACKED_CURRENCIES) do
     local currenciesItem = currenciesItems[i]
     if not currenciesItem then
       currenciesItem = CreateFrame("Button", nil, self.CT_CLP_CURRENCIES_MENU)
@@ -1402,22 +1456,34 @@ function addon:ShowCurrenciesTooltip(anchor, character)
 
   if character.currencies and next(character.currencies) then
     local hasAnyOutput = false
-    for _, currencyID in ipairs(TRACKED_CURRENCIES) do
-      local currency = character.currencies[currencyID]
-      if not hiddenCurrencies[currencyID] and currency then
+    for _, currencyId in ipairs(addon.TRACKED_CURRENCIES) do
+      local currency = character.currencies[currencyId]
+      if not hiddenCurrencies[currencyId] and currency then
         hasAnyOutput = true
         local icon = string.format("|T%d:14:14:0:0|t", currency.icon)
         local leftColumn = string.format("%s  %s", icon, currency.name)
-        local qty = string.format("|cffffffff%d|r", currency.quantity)
+        local qty = string.format("|cff%s%d|r", COLORS.GOLD, currency.quantity)
         local limit = ""
         if currency.maxWeeklyQuantity and currency.maxWeeklyQuantity > 0 then
-          limit = string.format(L["CURR_WEEKLY_LIMIT"], currency.quantityEarnedThisWeek, currency.maxWeeklyQuantity)
+          limit = string.format(
+            L["CURR_WEEKLY_LIMIT"],
+            LIMIT_COLORFUL(currency.quantityEarnedThisWeek, currency.maxWeeklyQuantity),
+            currency.maxWeeklyQuantity
+          )
         end
         if currency.maxQuantity and currency.maxQuantity > 0 then
           if currency.totalEarned and currency.totalEarned > 0 then
-            limit = string.format(L["CURR_SEASON_LIMIT"], currency.totalEarned, currency.maxQuantity)
+            limit = string.format(
+              L["CURR_SEASON_LIMIT"],
+              LIMIT_COLORFUL(currency.totalEarned, currency.maxQuantity),
+              currency.maxQuantity
+            )
           else
-            limit = string.format(L["CURR_LIMIT"], currency.quantity, currency.maxQuantity)
+            limit = string.format(
+              L["CURR_LIMIT"],
+              LIMIT_COLORFUL(currency.quantity, currency.maxQuantity),
+              currency.maxQuantity
+            )
           end
         end
         local rightColumn = qty .. limit

@@ -14,23 +14,6 @@ local DATA_VERSION = "2.0.0"
 
 local SCAN_SLOTS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19 }
 
--- 声明需要追踪的常用非战网共享货币 ID 列表
-local TRACKED_CURRENCIES = {
-  3028, -- 修复的宝匣钥匙
-  3310, -- 宝匣钥匙碎片
-  2803, -- 晦幽铸币
-  3356, -- 未被污染的法力水晶
-  3418, -- 晦暗虚空核心
-  3378, -- 黎明之光法力熔剂
-  3383, -- 冒险者曙光纹章
-  3341, -- 老兵曙光纹章
-  3343, -- 勇士曙光纹章
-  3345, -- 英雄曙光纹章
-  3347, -- 神话曙光纹章
-  1792, -- 荣誉点数
-  1602, -- 征服点数
-}
-
 local BAG_SLOTS = { 0, 1, 2, 3, 4, 5 }
 local BANK_SLOTS = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local WARBAND_BANK_SLOT_IDX = 12
@@ -154,9 +137,9 @@ end
 
 local function ScanCharacterCurrencies()
   local character = CharactersTrackerDB.CHARACTERS[guid]
-  for _, currencyID in ipairs(TRACKED_CURRENCIES) do
+  for _, currencyID in ipairs(addon.TRACKED_CURRENCIES) do
     local info = C_CurrencyInfo.GetCurrencyInfo(currencyID)
-    if info and not info.isAccountWide then
+    if info then
       character.currencies[currencyID] = {
         name = info.name,
         quantity = info.quantity,
