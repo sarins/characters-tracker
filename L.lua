@@ -59,6 +59,10 @@ L["CLP_LABEL_DV"] = "Dungeons Vault"
 L["CLP_LABEL_WV"] = "World Vault"
 L["CLP_LABEL_M_SCORE"] = "M+ Score"
 L["CLP_LABEL_PLAYED"] = "Played"
+L["CLP_LABEL_P1"] = "Primary Prof"
+L["CLP_LABEL_P2"] = "Secondary Prof"
+L["CLP_LABEL_FISHING"] = "Fishing"
+L["CLP_LABEL_COOKING"] = "Cooking"
 L["CLP_LABEL_GOLD"] = "Gold"
 L["CLP_LABEL_CURRENCIES"] = "Currencies"
 L["CLP_LABEL_PVP"] = "PvP"
@@ -87,6 +91,12 @@ L["CT_CONFIRM_Y"] = "Confirm"
 L["CT_CONFIRM_N"] = "Cancel"
 -- Binding keys description
 L["CT_BINDING_DESC"] = "Show/Hide the Characters Tracker Panel"
+-- Professions
+L["PROF_UNLEARNED"] = "_"
+L["PROF_EQUIPMENT"] = "Profession Equipment"
+L["PROF_CONCENTRATION"] = "Concentration:"
+L["PROF_MISSING_TIPS_L1"] = "Please open any prof window while %s logged to sync data;"
+L["PROF_MISSING_TIPS_L2"] = "The prof window could be Mining, Alchemy, Enchanting, etc."
 
 -- ====================================================================
 -- 简体中文环境 (zhCN)
@@ -137,6 +147,10 @@ if currentLocale == "zhCN" then
   L["CLP_LABEL_WV"] = "地下堡/世界"
   L["CLP_LABEL_M_SCORE"] = "大秘境分数"
   L["CLP_LABEL_PLAYED"] = "游戏时长"
+  L["CLP_LABEL_P1"] = "主专业"
+  L["CLP_LABEL_P2"] = "副专业"
+  L["CLP_LABEL_FISHING"] = "钓鱼"
+  L["CLP_LABEL_COOKING"] = "烹饪"
   L["CLP_LABEL_GOLD"] = "金币"
   L["CLP_LABEL_CURRENCIES"] = "货币"
   L["CLP_LABEL_PVP"] = "PvP"
@@ -165,4 +179,10 @@ if currentLocale == "zhCN" then
   L["CT_CONFIRM_N"] = "取消"
   -- Binding keys description
   L["CT_BINDING_DESC"] = "显示/隐藏 角色追踪窗口"
+  -- Professions
+  L["PROF_UNLEARNED"] = "_"
+  L["PROF_EQUIPMENT"] = "专业装备"
+  L["PROF_CONCENTRATION"] = "专注:"
+  L["PROF_MISSING_TIPS_L1"] = "请在登录角色 %s 时，至少一次打开任意专业窗口同步专业信息；"
+  L["PROF_MISSING_TIPS_L2"] = "专业窗口可以是采矿、制皮、附魔等任意其中一个。"
 end

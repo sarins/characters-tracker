@@ -18,14 +18,60 @@ local BAG_SLOTS = { 0, 1, 2, 3, 4, 5 }
 local BANK_SLOTS = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
 local WARBAND_BANK_SLOT_IDX = 12
 
+local SUB_SKILL_LINE_IDS = {
+  [171] = { 2485, 2484, 2483, 2482, 2481, 2480, 2479, 2478, 2750, 2823, 2871, 2906 }, -- Alchemy/炼金
+  [164] = { 2477, 2476, 2475, 2474, 2473, 2472, 2454, 2437, 2751, 2822, 2872, 2907 }, -- Blacksmithing/锻造
+  [185] = { 2548, 2547, 2546, 2545, 2544, 2543, 2542, 2541, 2752, 2824, 2873, 2908 }, -- Cooking/烹饪
+  [333] = { 2494, 2493, 2492, 2491, 2489, 2488, 2487, 2486, 2753, 2825, 2874, 2909 }, -- Enchanting/附魔
+  [202] = { 2506, 2505, 2504, 2503, 2502, 2501, 2500, 2499, 2755, 2827, 2875, 2910 }, -- Engineering/工程
+  [356] = { 2592, 2591, 2590, 2589, 2588, 2587, 2586, 2585, 2754, 2826, 2876, 2911 }, -- Fishing/钓鱼
+  [182] = { 2556, 2555, 2554, 2553, 2552, 2551, 2550, 2549, 2760, 2832, 2877, 2912 }, -- Herbalism/草药
+  [773] = { 2514, 2513, 2512, 2511, 2510, 2509, 2508, 2507, 2756, 2828, 2878, 2913 }, -- Inscription/铭文
+  [755] = { 2524, 2523, 2522, 2521, 2520, 2519, 2518, 2517, 2757, 2829, 2879, 2914 }, -- Jewelcrafting/珠宝
+  [165] = { 2532, 2531, 2530, 2529, 2528, 2527, 2526, 2525, 2758, 2830, 2880, 2915 }, -- Leatherworking/制皮
+  [186] = { 2572, 2571, 2570, 2569, 2568, 2567, 2566, 2565, 2761, 2833, 2881, 2916 }, -- Mining/采矿
+  [393] = { 2564, 2563, 2562, 2561, 2560, 2559, 2558, 2557, 2762, 2834, 2882, 2917 }, -- Skinning/剥皮
+  [197] = { 2540, 2539, 2538, 2537, 2536, 2535, 2534, 2533, 2759, 2831, 2883, 2918 }, -- Tailoring/裁缝
+}
+
+local SKILL_LINE_CONCENTRATION_ENABLE = {
+  2871, 2906, -- Alchemy/炼金
+  2872, 2907, -- Blacksmithing/锻造
+  2874, 2909, -- Enchanting/附魔
+  2875, 2910, -- Engineering/工程
+  2878, 2913, -- Inscription/铭文
+  2879, 2914, -- Jewelcrafting/珠宝
+  2880, 2915, -- Leatherworking/制皮
+  2883, 2918, -- Tailoring/裁缝
+}
+
+-- tIndexOf
+local SKILL_LINE_OVERLOAD_SPELLS = {
+  -- Mining/采矿
+  [2916] = C_Spell.GetSpellInfo(1225392),
+  [2881] = C_Spell.GetSpellInfo(423394),
+  -- Herbalism/草药
+  [2912] = C_Spell.GetSpellInfo(1223014),
+  [2877] = C_Spell.GetSpellInfo(423395),
+}
+
 local isBankOpen = false
 local guid
 
-addon.DEBUG = false
 function addon:DP(...)
-  if addon.DEBUG then
+  if CharactersTrackerDB.DEBUG then
     print(...)
   end
+end
+
+local function isLockingFor(k, s)
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+  local now = time()
+  if (now - (character[k] or 0)) < s then
+    return true
+  end
+  character[k] = now
+  return false
 end
 
 local function DbCheck()
@@ -44,6 +90,7 @@ local function DbCheck()
           HIDDEN_CHARACTERS = {},
         },
       },
+      DEBUG = false,
     }
   else
     CharactersTrackerDB.CHARACTERS = CharactersTrackerDB.CHARACTERS or {}
@@ -80,6 +127,7 @@ local function InitCharacterCache()
   character.bags = character.bags or {}
   character.currencies = character.currencies or {}
   character.stats = character.stats or { basic = {}, secondary = {} }
+  character.professions = character.professions or {}
   character.updated = time()
   CharactersTrackerDB.CHARACTERS[guid] = character
 
@@ -280,6 +328,157 @@ local function ScanCharacterRewards()
   end
 end
 
+local function LookupProfessionDetial(idx)
+  if idx then
+    local name, icon, _, _, _, _, skillLineId = GetProfessionInfo(idx)
+
+    if not name or not skillLineId then
+      return false
+    end
+
+    local professionInfo = C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineId)
+    if not professionInfo or not professionInfo.profession then
+      return false
+    end
+
+    local profession = professionInfo.profession
+
+    -- if professionInfo.maxSkillLevel < 1 then
+    -- end
+
+    local subSkillLines = {}
+    if SUB_SKILL_LINE_IDS[skillLineId] then
+      ------------------------------------------------------------------------------------------------------------------
+      -- Force open trade skill panel for retrieve skill data, I can not understand why design like that by Blizzard. --
+      ------------------------------------------------------------------------------------------------------------------
+      -- C_TradeSkillUI.OpenTradeSkill(skillLineId)
+      -- C_TradeSkillUI.CloseTradeSkill()
+      -- End Force open trade skill panel
+
+      local subSkillLineIds = SUB_SKILL_LINE_IDS[skillLineId]
+
+      for _idx, subSkillLineId in ipairs(subSkillLineIds) do
+        subSkillLines[_idx] = C_TradeSkillUI.GetProfessionInfoBySkillLineID(subSkillLineId)
+        if tIndexOf(SKILL_LINE_CONCENTRATION_ENABLE, subSkillLineId) then
+          -- do lookup concentration
+          local ccid = C_TradeSkillUI.GetConcentrationCurrencyID(subSkillLineId)
+          if ccid then
+            local currency = C_CurrencyInfo.GetCurrencyInfo(ccid)
+            if currency then
+              subSkillLines[_idx].concentration = {
+                id = currency.currencyID,
+                name = currency.name,
+                discovered = currency.discovered,
+                quantity = currency.quantity or 0,
+                maxQuantity = currency.maxQuantity or 0,
+                rechargingAmountPerCycle = currency.rechargingAmountPerCycle or 0,
+                rechargingCycle = (currency.rechargingCycleDurationMS or 0) / 1000,
+                updated = time(),
+              }
+            end
+          end
+        end
+
+        local overloadSpell = SKILL_LINE_OVERLOAD_SPELLS[subSkillLineId]
+        if overloadSpell and overloadSpell.spellID and C_SpellBook.IsSpellInSpellBook(overloadSpell.spellID) then
+          -- do lookup overload spell
+          subSkillLines[_idx].overload = {
+            spell = overloadSpell,
+            charges = C_Spell.GetSpellCharges(overloadSpell.spellID),
+          }
+        end
+      end
+    end
+
+    -- lookup slots
+    local slots = {}
+    local professionSlots = C_TradeSkillUI.GetProfessionSlots(profession)
+    if professionSlots then
+      for _idx, professionSlot in ipairs(professionSlots) do
+        local link = GetInventoryItemLink("player", professionSlot)
+        if link then
+          table.insert(slots, link)
+        end
+      end
+    end
+
+    return {
+      idx = idx,
+      icon = icon,
+      name = name,
+      profession = profession,
+      skillLineId = skillLineId,
+      subSkillLines = subSkillLines,
+      slots = slots,
+    }
+  end
+  return false
+end
+
+local function ScanCharacterProfessions()
+  if isLockingFor("lastTimeScanCharacterProfessions", 5) then return end
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+
+  for k, p in pairs(character.professions) do
+    if p and p.idx then
+      local profession = LookupProfessionDetial(p.idx)
+      if profession then
+        character.professions[k] = profession
+      end
+    end
+  end
+end
+
+local function LookupProfessionInfo(idx)
+  if idx then
+    local name, icon, _, _, _, _, skillLineId = GetProfessionInfo(idx)
+
+    if not name or not skillLineId then
+      return false
+    end
+
+    local professionInfo = C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLineId)
+    if not professionInfo or not professionInfo.profession then
+      return false
+    end
+
+    return {
+      idx = idx,
+      icon = icon,
+      name = name,
+      profession = professionInfo.profession,
+      skillLineId = skillLineId,
+    }
+  end
+  return false
+end
+
+local function CheckCharacterProfessions()
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+
+  local p1, p2, archaeology, fishing, cooking = GetProfessions()
+
+  if not character.professions.p1 or p1 ~= character.professions.p1.idx then
+    character.professions.p1 = LookupProfessionInfo(p1)
+  end
+
+  if not character.professions.p2 or p2 ~= character.professions.p2.idx then
+    character.professions.p2 = LookupProfessionInfo(p2)
+  end
+
+  if not character.professions.archaeology or archaeology ~= character.professions.archaeology.idx then
+    character.professions.archaeology = LookupProfessionInfo(archaeology)
+  end
+
+  if not character.professions.fishing or fishing ~= character.professions.fishing.idx then
+    character.professions.fishing = LookupProfessionInfo(fishing)
+  end
+
+  if not character.professions.cooking or cooking ~= character.professions.cooking.idx then
+    character.professions.cooking = LookupProfessionInfo(cooking)
+  end
+end
+
 -- unsafe function, check info valid before use.
 local function ConvertBagInfo(info)
   return {
@@ -289,16 +488,6 @@ local function ConvertBagInfo(info)
     icon = info.iconFileID,
     quality = info.quality
   }
-end
-
-local function isLockingFor(k, s)
-  local character = CharactersTrackerDB.CHARACTERS[guid]
-  local now = time()
-  if (now - (character[k] or 0)) < s then
-    return true
-  end
-  character[k] = now
-  return false
 end
 
 local function ScanBagSlots(bag)
@@ -423,13 +612,15 @@ eventFrame:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 eventFrame:RegisterEvent("BANKFRAME_OPENED")
 eventFrame:RegisterEvent("BANKFRAME_CLOSED")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
--- add below when 1.2.0
+-- add below when 2.0.0
 eventFrame:RegisterEvent("PLAYER_LOGOUT")
 eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
 eventFrame:RegisterEvent("TIME_PLAYED_MSG")
 -- eventFrame:RegisterEvent("ZONE_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
+-- add below when 2.0.3
+eventFrame:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
   if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
@@ -505,7 +696,13 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     C_Timer.After(1.5, function()
       ScanCharacterStats()
     end)
+  elseif event == "TRADE_SKILL_LIST_UPDATE" then
+    addon:DP(event)
+    C_Timer.After(2, function()
+      ScanCharacterProfessions()
+    end)
   elseif event == "PLAYER_ENTERING_WORLD" then
+    addon:DP(event)
     InitCharacterCache()
     addon:InitEnteringWorld()
     -- ==========================================
@@ -518,6 +715,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
       ScanCharacterGears()
       ScanCharacterRewards()
       ScanCharacterStats()
+      CheckCharacterProfessions()
     end)
     addon:CreateFloatingButton()
   end
@@ -540,8 +738,10 @@ SlashCmdList["WBCT"] = function(msg)
   if "bag" == msg then
     addon:ToggleInventoryPanel()
   elseif "debug" == msg then
-    addon.DEBUG = not addon.DEBUG
-    print(string.format("Debug Switcher: %s", addon.DEBUG and "On" or "Off"))
+    CharactersTrackerDB.DEBUG = not CharactersTrackerDB.DEBUG
+    print(string.format("Debug Switcher: %s", CharactersTrackerDB.DEBUG and "On" or "Off"))
+  -- elseif "p" == msg then
+  --   ScanCharacterProfessions()
   else
     addon:Main()
   end

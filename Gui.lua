@@ -34,6 +34,8 @@ local COLORS = {
   DARK_GOLD = "E6CC80",
   GOLD = "ffd100",
   WHITE = "ffffff",
+  GREEN = "1EFF00",
+  ORANGE = "FF8000",
   PROGRESS = {
     DONE = "22C55E",
     UNLOCKED = "EAB308",
@@ -100,6 +102,19 @@ local function VAULTS_PROGRESS(c, t)
     end
   end
   return ""
+end
+
+local function PROFESSION(c, t, iconOnly)
+  if c and t and "table" == type(c.professions) then
+    local p = c.professions[t]
+    if p and p.name and p.icon then
+      if iconOnly then
+        return string.format("|T%d:14:14:0:0|t", p.icon)
+      end
+      return string.format("|T%d:12:12:0:0|t |cff%s%s|r", p.icon, COLORS.DARK_GOLD, p.name)
+    end
+  end
+  return L["PROF_UNLEARNED"]
 end
 
 local FORMATTERS = {
@@ -190,6 +205,18 @@ local FORMATTERS = {
       string.format(SecondsToTimeAbbrev(c.levelPlayed or 0)),
       string.format(SecondsToTimeAbbrev(c.played or 0))
     )
+  end,
+  P1 = function(c)
+    return PROFESSION(c, "p1", false)
+  end,
+  P2 = function(c)
+    return PROFESSION(c, "p2", false)
+  end,
+  FISHING = function(c)
+    return PROFESSION(c, "fishing", true)
+  end,
+  COOKING = function(c)
+    return PROFESSION(c, "cooking", true)
   end,
   GOLD_FLOOR = function(c)
     local gold = math.abs(c and c.gold or 0)
@@ -496,6 +523,10 @@ local META = {
       { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = FORMATTERS.WV,               fixed = false, align = "CENTER" },
       { id = "M_SCORE",    label = L["CLP_LABEL_M_SCORE"],    formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
       { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
+      { id = "P1",         label = L["CLP_LABEL_P1"],         formatter = FORMATTERS.P1,               fixed = false, align = "CENTER" },
+      { id = "P2",         label = L["CLP_LABEL_P2"],         formatter = FORMATTERS.P2,               fixed = false, align = "CENTER" },
+      { id = "FISHING",    label = L["CLP_LABEL_FISHING"],    formatter = FORMATTERS.FISHING,          fixed = false, align = "CENTER" },
+      { id = "COOKING",    label = L["CLP_LABEL_COOKING"],    formatter = FORMATTERS.COOKING,          fixed = false, align = "CENTER" },
       { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
       { id = "CURRENCIES", label = L["CLP_LABEL_CURRENCIES"], formatter = "",                          fixed = false, align = "CENTER", width = 64 },
       { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = FORMATTERS.PVP,              fixed = false, align = "CENTER" },
@@ -1331,6 +1362,7 @@ function addon:ClpRefreshGrid()
               -- do nothing
               cell.text:SetText("")
             end
+            -- gear detail popup
             if "NAME" == meta.id then
               cell:EnableMouse(true)
               cell:SetScript("OnMouseDown", function(_self, button)
@@ -1339,6 +1371,7 @@ function addon:ClpRefreshGrid()
                 end
               end)
             end
+            -- vaults tooltip
             if "RV" == meta.id or "DV" == meta.id or "WV" == meta.id then
               cell:EnableMouse(true)
               cell:SetScript("OnEnter", function(_self)
@@ -1348,6 +1381,24 @@ function addon:ClpRefreshGrid()
                   addon:ShowVaultsTooltip(_self, character, 1, meta.label)
                 else
                   addon:ShowVaultsTooltip(_self, character, 6, meta.label)
+                end
+              end)
+              cell:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+              end)
+            end
+            -- profession tooltip
+            if "P1" == meta.id or "P2" == meta.id or "FISHING" == meta.id or "COOKING" == meta.id then
+              cell:EnableMouse(true)
+              cell:SetScript("OnEnter", function(_self)
+                if "P1" == meta.id then
+                  addon:ShowProfessionTooltip(_self, character, "p1")
+                elseif "P2" == meta.id then
+                  addon:ShowProfessionTooltip(_self, character, "p2")
+                elseif "FISHING" == meta.id then
+                  addon:ShowProfessionTooltip(_self, character, "fishing")
+                else
+                  addon:ShowProfessionTooltip(_self, character, "cooking")
                 end
               end)
               cell:SetScript("OnLeave", function()
@@ -1554,6 +1605,125 @@ function addon:ShowVaultsTooltip(anchor, character, t, label)
       end
     end
   end
+  GameTooltip:Show()
+end
+
+-- ==========================================
+-- Profession Tooltip
+-- ==========================================
+function addon:ShowProfessionTooltip(anchor, character, t)
+  if not anchor or not character or "table" ~= type(character.professions) then
+    return
+  end
+  GameTooltip:SetOwner(anchor, "ANCHOR_RIGHT")
+  GameTooltip:ClearLines()
+
+  local p = character.professions[t]
+  if not p or not p.name or not p.icon then
+    return
+  end
+
+  GameTooltip:AddLine(FORMATTERS.NAME(character))
+  GameTooltip:AddLine(string.format("|T%d:12:12:0:0|t |cff%s%s|r", p.icon, COLORS.DARK_GOLD, p.name))
+
+  if p.subSkillLines and p.slots then
+    GameTooltip:AddLine(" ")
+    for _idx, skill in ipairs(p.subSkillLines) do
+      if skill and skill.professionName and skill.maxSkillLevel > 0 then
+        -- concentration
+        local concentration = ""
+        if skill.concentration and skill.concentration.discovered then
+          local c = skill.concentration
+
+          if c.quantity < c.maxQuantity then
+            local rechargedEstimated = ((time() - c.updated) / c.rechargingCycle) * c.rechargingAmountPerCycle
+            local maxRecharged = c.maxQuantity - c.quantity
+            local recharged = math.min(rechargedEstimated, maxRecharged)
+            if recharged < 1 then
+              concentration = string.format(
+                "|cff%s%s|r %d/%d",
+                COLORS.ORANGE,
+                L["PROF_CONCENTRATION"],
+                c.quantity,
+                c.maxQuantity
+              )
+            else
+              concentration = string.format(
+                "|cff%s%s|r %d|cff%s(+%d)|r/%d",
+                COLORS.ORANGE,
+                L["PROF_CONCENTRATION"],
+                c.quantity,
+                COLORS.GREEN,
+                recharged,
+                c.maxQuantity
+              )
+            end
+          else
+            concentration = string.format(
+              "|cff%s%s|r |cff%s%d/%d|r",
+              COLORS.ORANGE,
+              L["PROF_CONCENTRATION"],
+              COLORS.GOLD,
+              c.maxQuantity,
+              c.maxQuantity
+            )
+          end
+        end
+
+        -- spell recharged
+        local overload = ""
+        if skill.overload and skill.overload.spell and skill.overload.charges then
+          local spell = skill.overload.spell
+          local charges = skill.overload.charges
+          if charges.currentCharges < charges.maxCharges then
+            local rechargedEstimated = math.floor((GetTime() - charges.cooldownStartTime) / charges.cooldownDuration)
+            local maxRecharged = charges.maxCharges - charges.currentCharges
+            local recharged = math.min(rechargedEstimated, maxRecharged)
+            overload = string.format(
+              "|T%d:12:12:0:0|t |cff%s%s|r %d/%d",
+              spell.iconID,
+              COLORS.WHITE,
+              spell.name,
+              (charges.currentCharges + recharged),
+              charges.maxCharges
+            )
+          else
+            overload = string.format(
+              "|T%d:12:12:0:0|t |cff%s%s|r %d/%d",
+              spell.iconID,
+              COLORS.WHITE,
+              spell.name,
+              charges.maxCharges,
+              charges.maxCharges
+            )
+          end
+        end
+
+        local left = string.format("|cff%s%s|r %s%s", COLORS.DARK_GOLD, skill.professionName, concentration, overload)
+
+        local right = string.format("%d/%d", skill.skillLevel, skill.maxSkillLevel)
+        if skill.skillLevel == skill.maxSkillLevel then
+          right = string.format("|cff%s%s|r", COLORS.GOLD, right)
+        end
+        GameTooltip:AddDoubleLine(left, right, 1, 1, 1, 1, 1, 1)
+      end
+    end
+
+    if #p.slots > 0 then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine(L["PROF_EQUIPMENT"])
+      for _idx, slot in ipairs(p.slots) do
+        if slot then
+          GameTooltip:AddLine(slot)
+        end
+      end
+    end
+  else
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(string.format(L["PROF_MISSING_TIPS_L1"], FORMATTERS.NAME(character)))
+    GameTooltip:AddLine(L["PROF_MISSING_TIPS_L2"])
+  end
+
   GameTooltip:Show()
 end
 
