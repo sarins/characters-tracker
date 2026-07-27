@@ -219,13 +219,26 @@ local function ScanCharacterGears()
         local quality = item:GetItemQuality()
         local r, g, b, _ = C_Item.GetItemQualityColor(quality)
         local color = { r, g, b, 1 }
+        local itemId = item:GetItemID()
+        local itemName,
+        _2, _3, _4, _5,
+        itemType,
+        itemSubType,
+        _6, _7, _8, _9, _10, _11, _12, _13, _14, _15,
+        itemDescription = C_Item.GetItemInfo(itemId)
 
         character.gear[slotId] = {
+          id = itemId,
+          count = 1,
           link = link,
           level = level,
           icon = icon,
           quality = quality,
           color = color,
+          itemName = itemName,
+          itemType = itemType,
+          itemSubType = itemSubType,
+          itemDescription = itemDescription,
         }
         -- 过滤衬衣和战袍(4 and 19)，其余有效装备计入平均装等
         if slotId ~= 4 and slotId ~= 19 and level > 0 then
@@ -480,14 +493,47 @@ local function CheckCharacterProfessions()
 end
 
 -- unsafe function, check info valid before use.
-local function ConvertBagInfo(info)
-  return {
-    id = info.itemID,
-    count = info.stackCount,
-    link = info.hyperlink,
-    icon = info.iconFileID,
-    quality = info.quality
-  }
+local function CachingSlotInfo(info, cache, idx)
+  if "string" ~= type(info.hyperlink) then
+    -- IGNORED, because the following steps missing key element.
+    return
+  end
+
+  if info.hyperlink:find("keystone:") then
+    -- IGNORED, because the item is Keystone which will be ignored.
+    -- print(hyperlink:gsub("|", "||"))
+    return
+  end
+
+  local item = Item:CreateFromItemLink(info.hyperlink)
+  item:ContinueOnItemLoad(function()
+    local level = item:GetCurrentItemLevel() or 0
+    local icon = item:GetItemIcon()
+    local quality = item:GetItemQuality()
+    local r, g, b, _ = C_Item.GetItemQualityColor(quality)
+    local color = { r, g, b, 1 }
+    local itemName,
+    _2, _3, _4, _5,
+    itemType,
+    itemSubType,
+    _6, _7, _8, _9, _10, _11, _12, _13, _14, _15,
+    itemDescription = C_Item.GetItemInfo(info.itemID)
+
+    local slot = {
+      id = info.itemID,
+      count = info.stackCount,
+      link = info.hyperlink,
+      level = level,
+      icon = icon,
+      quality = quality,
+      color = color,
+      itemName = itemName,
+      itemType = itemType,
+      itemSubType = itemSubType,
+      itemDescription = itemDescription,
+    }
+    cache[idx] = slot
+  end)
 end
 
 local function ScanBagSlots(bag)
@@ -497,8 +543,8 @@ local function ScanBagSlots(bag)
     character.bags[bag] = {}
     for s = 1, numSlots do
       local info = C_Container.GetContainerItemInfo(bag, s)
-      if info and info.itemID then
-        character.bags[bag][s] = ConvertBagInfo(info)
+      if info and info.itemID and info.hyperlink then
+        CachingSlotInfo(info, character.bags[bag], s)
       end
     end
   end
@@ -506,7 +552,7 @@ local function ScanBagSlots(bag)
 end
 
 local function ScanCharacterBags()
-  if isLockingFor("lastTimeUpdateBag", 30) then return end
+  if isLockingFor("lastTimeUpdateBag", 5) then return end
   for _, b in pairs(BAG_SLOTS) do
     ScanBagSlots(b)
   end
@@ -525,8 +571,8 @@ local function ScanBankSlots(bank)
         break
       end
       local info = C_Container.GetContainerItemInfo(bank, s)
-      if info and info.itemID then
-        bankSlots[s] = ConvertBagInfo(info)
+      if info and info.itemID and info.hyperlink then
+        CachingSlotInfo(info, bankSlots, s)
       end
     end
     if bank < WARBAND_BANK_SLOT_IDX then
@@ -740,8 +786,8 @@ SlashCmdList["WBCT"] = function(msg)
   elseif "debug" == msg then
     CharactersTrackerDB.DEBUG = not CharactersTrackerDB.DEBUG
     print(string.format("Debug Switcher: %s", CharactersTrackerDB.DEBUG and "On" or "Off"))
-  -- elseif "p" == msg then
-  --   ScanCharacterProfessions()
+    -- elseif "p" == msg then
+    --   ScanCharacterProfessions()
   else
     addon:Main()
   end

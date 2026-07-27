@@ -2102,34 +2102,80 @@ function addon:GetContainerName(id)
   end
 end
 
+function addon:CalcAggregateItemId(item)
+  return string.format("ID_%s_Q_%s_L_%s", math.abs(item.id), math.abs(item.quality or 0), math.abs(item.level or 0))
+end
+
 function addon:AggregateWarbandItems()
   local AGGREGATED_ITEMS = self.CT_IP_STATUS.AGGREGATED_ITEMS
   table.wipe(AGGREGATED_ITEMS)
 
   for _, character in pairs(CharactersTrackerDB.CHARACTERS) do
-    if type(character) == "table" and character.name and character.bags then
+    if type(character) == "table" and character.name then
       local storage = string.format("%s-%s", FORMATTERS.NAME(character), FORMATTERS.REALM(character))
-      for bagId, bag in pairs(character.bags) do
-        for _, item in pairs(bag) do
+      if character.bags then
+        for bagId, bag in pairs(character.bags) do
+          for _, item in pairs(bag) do
+            if item and item.id then
+              local aggregatedItemId = addon:CalcAggregateItemId(item)
+              if not AGGREGATED_ITEMS[aggregatedItemId] then
+                AGGREGATED_ITEMS[aggregatedItemId] = {
+                  id = item.id,
+                  aggregatedItemId = aggregatedItemId,
+                  name = item.itemName or "",
+                  itemType = item.itemType,
+                  itemSubType = item.itemSubType,
+                  itemDescription = item.itemDescription,
+                  icon = item.icon or 0,
+                  quality = item.quality or 0,
+                  link = item.link,
+                  totalCount = 0,
+                  sources = {}
+                }
+              end
+
+              local aggregatedItem = AGGREGATED_ITEMS[aggregatedItemId]
+
+              aggregatedItem.totalCount = aggregatedItem.totalCount + item.count
+              local container = addon:GetContainerName(bagId)
+              if not aggregatedItem.sources[storage] then
+                aggregatedItem.sources[storage] = {}
+              end
+              aggregatedItem.sources[storage][container] =
+                  (aggregatedItem.sources[storage][container] or 0) + item.count
+            end
+          end
+        end
+      end
+      if character.gear then
+        for _, item in ipairs(character.gear) do
           if item and item.id then
-            if not AGGREGATED_ITEMS[item.id] then
-              AGGREGATED_ITEMS[item.id] = {
+            local aggregatedItemId = addon:CalcAggregateItemId(item)
+            if not AGGREGATED_ITEMS[aggregatedItemId] then
+              AGGREGATED_ITEMS[aggregatedItemId] = {
                 id = item.id,
-                name = item.link and (C_Item.GetItemInfo(item.link) or item.link:match("%[(.-)%]")),
-                icon = item.icon or 134400,
-                quality = item.quality or 1,
+                aggregatedItemId = aggregatedItemId,
+                name = item.itemName or "",
+                itemType = item.itemType,
+                itemSubType = item.itemSubType,
+                itemDescription = item.itemDescription,
+                icon = item.icon or 0,
+                quality = item.quality or 0,
                 link = item.link,
                 totalCount = 0,
                 sources = {}
               }
             end
-            AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
-            local container = addon:GetContainerName(bagId)
-            if not AGGREGATED_ITEMS[item.id].sources[storage] then
-              AGGREGATED_ITEMS[item.id].sources[storage] = {}
+
+            local aggregatedItem = AGGREGATED_ITEMS[aggregatedItemId]
+
+            aggregatedItem.totalCount = aggregatedItem.totalCount + item.count
+            local container = L["INV_LOC_EQUIPPED"]
+            if not aggregatedItem.sources[storage] then
+              aggregatedItem.sources[storage] = {}
             end
-            AGGREGATED_ITEMS[item.id].sources[storage][container] =
-                (AGGREGATED_ITEMS[item.id].sources[storage][container] or 0) + item.count
+            aggregatedItem.sources[storage][container] =
+                (aggregatedItem.sources[storage][container] or 0) + item.count
           end
         end
       end
@@ -2139,26 +2185,32 @@ function addon:AggregateWarbandItems()
   for bagId, bag in pairs(CharactersTrackerDB.WARBAND.BAGS) do
     for _, item in pairs(bag) do
       if item and item.id then
-        if not AGGREGATED_ITEMS[item.id] then
-          AGGREGATED_ITEMS[item.id] = {
+        local aggregatedItemId = addon:CalcAggregateItemId(item)
+        if not AGGREGATED_ITEMS[aggregatedItemId] then
+          AGGREGATED_ITEMS[aggregatedItemId] = {
             id = item.id,
-            name = item.link and (C_Item.GetItemInfo(item.link) or item.link:match("%[(.-)%]")),
-            icon = item.icon or 134400,
-            quality = item.quality or 1,
+            aggregatedItemId = aggregatedItemId,
+            name = item.itemName or "",
+            itemType = item.itemType,
+            itemSubType = item.itemSubType,
+            itemDescription = item.itemDescription,
+            icon = item.icon or 0,
+            quality = item.quality or 0,
             link = item.link,
             totalCount = 0,
             sources = {}
           }
         end
 
-        AGGREGATED_ITEMS[item.id].totalCount = AGGREGATED_ITEMS[item.id].totalCount + item.count
+        local aggregatedItem = AGGREGATED_ITEMS[aggregatedItemId]
+
+        aggregatedItem.totalCount = aggregatedItem.totalCount + item.count
         local storage = L["INV_SRC_WARBAND"]
         local container = addon:GetContainerName(bagId)
-        if not AGGREGATED_ITEMS[item.id].sources[storage] then
-          AGGREGATED_ITEMS[item.id].sources[storage] = {}
+        if not aggregatedItem.sources[storage] then
+          aggregatedItem.sources[storage] = {}
         end
-        AGGREGATED_ITEMS[item.id].sources[storage][container] =
-            (AGGREGATED_ITEMS[item.id].sources[storage][container] or 0) + item.count
+        aggregatedItem.sources[storage][container] = (aggregatedItem.sources[storage][container] or 0) + item.count
       end
     end
   end
@@ -2177,7 +2229,14 @@ function addon:FilterAndSortItems(searchText)
       match = true
     else
       local itemName = string.lower(item.name or "")
-      if string.find(itemName, searchText, 1, true) or string.find(tostring(item.id), searchText, 1, true) then
+      local itemType = string.lower(item.itemType or "")
+      local itemSubType = string.lower(item.itemSubType or "")
+      local itemDescription = string.lower(item.itemDescription or "")
+      if string.find(itemName, searchText, 1, true) or
+          string.find(itemType, searchText, 1, true) or
+          string.find(itemSubType, searchText, 1, true) or
+          string.find(itemDescription, searchText, 1, true) or
+          string.find(tostring(item.id), searchText, 1, true) then
         match = true
       end
     end
