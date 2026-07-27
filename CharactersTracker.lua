@@ -128,6 +128,7 @@ local function InitCharacterCache()
   character.currencies = character.currencies or {}
   character.stats = character.stats or { basic = {}, secondary = {} }
   character.professions = character.professions or {}
+  character.talents = character.talents or {}
   character.updated = time()
   CharactersTrackerDB.CHARACTERS[guid] = character
 
@@ -590,6 +591,40 @@ local function ScanCharacterBanks()
   end
 end
 
+local function ScanActiveTalent()
+  if isLockingFor("lastTimeScanActiveTalent", 3) then return end
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+
+  local spec = GetSpecialization()
+  if spec > 4 then
+    -- 5 is no spec, because level < 10
+    return
+  end
+
+  local _, specialization = GetSpecializationInfo(spec)
+
+  if not specialization then
+    -- active talent will not be scan when no specialization.
+    return
+  end
+
+  local activeConfigId = C_ClassTalents.GetActiveConfigID()
+  if activeConfigId then
+    local activeTalent = C_Traits.GenerateImportString(activeConfigId)
+    character.talents.active = {
+      specialization = specialization,
+      talent = activeTalent,
+    }
+  end
+end
+
+local function CaptureActiveTalent()
+  local character = CharactersTrackerDB.CHARACTERS[guid]
+  if not character.talents.active or "table" ~= type(character.talents.active) then
+    ScanActiveTalent()
+  end
+end
+
 local function StringStartWith(str, prefix)
   return string.find(str, prefix, 1, true) == 1
 end
@@ -667,6 +702,8 @@ eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("CHALLENGE_MODE_MAPS_UPDATE")
 -- add below when 2.0.3
 eventFrame:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
+-- add below when 2.0.5
+eventFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
 
 eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
   if event == "ADDON_LOADED" and arg1 == "CharactersTracker" then
@@ -742,6 +779,10 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
     C_Timer.After(1.5, function()
       ScanCharacterStats()
     end)
+  elseif event == "TRAIT_CONFIG_UPDATED" then
+    C_Timer.After(1.5, function()
+      ScanActiveTalent()
+    end)
   elseif event == "TRADE_SKILL_LIST_UPDATE" then
     addon:DP(event)
     C_Timer.After(2, function()
@@ -762,6 +803,7 @@ eventFrame:SetScript("OnEvent", function(self, event, arg1, arg2, arg3)
       ScanCharacterRewards()
       ScanCharacterStats()
       CheckCharacterProfessions()
+      CaptureActiveTalent()
     end)
     addon:CreateFloatingButton()
   end
@@ -786,8 +828,8 @@ SlashCmdList["WBCT"] = function(msg)
   elseif "debug" == msg then
     CharactersTrackerDB.DEBUG = not CharactersTrackerDB.DEBUG
     print(string.format("Debug Switcher: %s", CharactersTrackerDB.DEBUG and "On" or "Off"))
-    -- elseif "p" == msg then
-    --   ScanCharacterProfessions()
+  elseif "p" == msg then
+    -- for dev
   else
     addon:Main()
   end

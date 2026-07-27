@@ -12,6 +12,8 @@ local L = CharactersTracker_Locale
 -- ====================================================================
 
 local CT_CLP_FRAME_LEVEL = 120
+local CT_CLP_CGP_LEVEL = 210
+local CT_CLP_CTP_LEVEL = 200
 
 local CT_INVENTORY_PANEL_LEVEL = 110
 
@@ -117,6 +119,14 @@ local function PROFESSION(c, t, iconOnly)
   return L["PROF_UNLEARNED"]
 end
 
+local function CLASS_COLOR(c, s)
+  if c and c.class then
+    local cc = RAID_CLASS_COLORS[c.class] and RAID_CLASS_COLORS[c.class].colorStr or "ffffffff"
+    return string.format("|c%s%s|r", cc, s)
+  end
+  return ""
+end
+
 local FORMATTERS = {
   NAME = function(c)
     if c and c.name and c.class then
@@ -130,13 +140,6 @@ local FORMATTERS = {
       local cc = RAID_CLASS_COLORS[c.class] and RAID_CLASS_COLORS[c.class].colorStr or "ffffffff"
       local cn = LOCALIZED_CLASS_NAMES_MALE[c.class]
       return string.format("|c%s%s|r", cc, cn or c.class)
-    end
-    return ""
-  end,
-  CLASS_COLOR = function(c, s)
-    if c and c.class then
-      local cc = RAID_CLASS_COLORS[c.class] and RAID_CLASS_COLORS[c.class].colorStr or "ffffffff"
-      return string.format("|c%s%s|r", cc, s)
     end
     return ""
   end,
@@ -186,6 +189,12 @@ local FORMATTERS = {
   end,
   ITEM_LEVEL = function(c)
     return c and c.equippedLevel or 0
+  end,
+  ACTIVE_TALENT = function(c)
+    if c and c.talents and c.talents.active and c.talents.active.specialization then
+      return CLASS_COLOR(c, c.talents.active.specialization)
+    end
+    return ""
   end,
   RV = function(c)
     return VAULTS_PROGRESS(c, 3)
@@ -473,6 +482,39 @@ local CT_THEME = {
       }
     }
   },
+  CTP = {
+    WIDTH              = 600,
+    HEIGHT             = 160,
+    LEFT_PADDING       = 8,
+    SCROLL_BAR_PADDING = 23,
+    BG                 = {
+      COLOR = { 0.08, 0.09, 0.11, 0.95 },
+    },
+    BANNER             = {
+      HEIGHT = 32,
+      BG = {
+        COLOR = { 0.04, 0.05, 0.06, 0.95 },
+      },
+      LINE = {
+        HEIGHT = 1,
+        COLOR = { 0.16, 0.18, 0.22, 1.00 },
+      },
+      ICON = {
+        TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\icon.tga",
+        SIZE = { 24, 24 },
+        POINT = { 8, 0 },
+      },
+      TITLE = {
+        COLOR = { 1.0, 0.82, 0.0 },
+        POINT = { 36, 0 }
+      },
+      CLOSE = {
+        TEXTURE = "Interface\\AddOns\\CharactersTracker\\media\\close.tga",
+        SIZE = { 24, 24 },
+        POINT = { -8, 0 }
+      },
+    },
+  },
   INVENTORY_PANEL = {
     WIDTH  = 640,
     HEIGHT = 560,
@@ -509,29 +551,30 @@ local CT_THEME = {
 local META = {
   CLP = {
     COLS = {
-      { id = "VISIBLE",    label = L["CLP_LABEL_VISIBLE"],    formatter = "",                          fixed = true,  align = "CENTER", width = 80 },
-      { id = "DRAG",       label = L["CLP_LABEL_DRAG"],       formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
-      { id = "NAME",       label = L["CLP_LABEL_NAME"],       formatter = FORMATTERS.NAME,             fixed = true,  align = "LEFT",   padding = 16 },
-      { id = "CLASS",      label = L["CLP_LABEL_CLASS"],      formatter = FORMATTERS.CLASS,            fixed = false, align = "CENTER" },
-      { id = "REALM",      label = L["CLP_LABEL_REALM"],      formatter = FORMATTERS.REALM,            fixed = false, align = "CENTER" },
-      { id = "LEVEL",      label = L["CLP_LABEL_LEVEL"],      formatter = FORMATTERS.LEVEL,            fixed = false, align = "CENTER" },
-      { id = "FACTION",    label = L["CLP_LABEL_FACTION"],    formatter = FORMATTERS.FACTION,          fixed = false, align = "CENTER" },
-      { id = "ZONE",       label = L["CLP_LABEL_ZONE"],       formatter = FORMATTERS.ZONE,             fixed = false, align = "CENTER" },
-      { id = "ITEM_LEVEL", label = L["CLP_LABEL_ITEM_LEVEL"], formatter = FORMATTERS.ITEM_LEVEL_FLOOR, fixed = false, align = "CENTER" },
-      { id = "RV",         label = L["CLP_LABEL_RV"],         formatter = FORMATTERS.RV,               fixed = false, align = "CENTER" },
-      { id = "DV",         label = L["CLP_LABEL_DV"],         formatter = FORMATTERS.DV,               fixed = false, align = "CENTER" },
-      { id = "WV",         label = L["CLP_LABEL_WV"],         formatter = FORMATTERS.WV,               fixed = false, align = "CENTER" },
-      { id = "M_SCORE",    label = L["CLP_LABEL_M_SCORE"],    formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
-      { id = "PLAYED",     label = L["CLP_LABEL_PLAYED"],     formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
-      { id = "P1",         label = L["CLP_LABEL_P1"],         formatter = FORMATTERS.P1,               fixed = false, align = "CENTER" },
-      { id = "P2",         label = L["CLP_LABEL_P2"],         formatter = FORMATTERS.P2,               fixed = false, align = "CENTER" },
-      { id = "FISHING",    label = L["CLP_LABEL_FISHING"],    formatter = FORMATTERS.FISHING,          fixed = false, align = "CENTER" },
-      { id = "COOKING",    label = L["CLP_LABEL_COOKING"],    formatter = FORMATTERS.COOKING,          fixed = false, align = "CENTER" },
-      { id = "GOLD",       label = L["CLP_LABEL_GOLD"],       formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
-      { id = "CURRENCIES", label = L["CLP_LABEL_CURRENCIES"], formatter = "",                          fixed = false, align = "CENTER", width = 64 },
-      { id = "PVP",        label = L["CLP_LABEL_PVP"],        formatter = FORMATTERS.PVP,              fixed = false, align = "CENTER" },
-      { id = "UPDATED",    label = L["CLP_LABEL_UPDATED"],    formatter = FORMATTERS.UPDATED2TA,       fixed = false, align = "CENTER" },
-      { id = "OPERATION",  label = L["CLP_LABEL_OPERATION"],  formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
+      { id = "VISIBLE",       label = L["CLP_LABEL_VISIBLE"],       formatter = "",                          fixed = true,  align = "CENTER", width = 80 },
+      { id = "DRAG",          label = L["CLP_LABEL_DRAG"],          formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
+      { id = "NAME",          label = L["CLP_LABEL_NAME"],          formatter = FORMATTERS.NAME,             fixed = true,  align = "LEFT",   padding = 16 },
+      { id = "CLASS",         label = L["CLP_LABEL_CLASS"],         formatter = FORMATTERS.CLASS,            fixed = false, align = "CENTER" },
+      { id = "REALM",         label = L["CLP_LABEL_REALM"],         formatter = FORMATTERS.REALM,            fixed = false, align = "CENTER" },
+      { id = "LEVEL",         label = L["CLP_LABEL_LEVEL"],         formatter = FORMATTERS.LEVEL,            fixed = false, align = "CENTER" },
+      { id = "FACTION",       label = L["CLP_LABEL_FACTION"],       formatter = FORMATTERS.FACTION,          fixed = false, align = "CENTER" },
+      { id = "ZONE",          label = L["CLP_LABEL_ZONE"],          formatter = FORMATTERS.ZONE,             fixed = false, align = "CENTER" },
+      { id = "ITEM_LEVEL",    label = L["CLP_LABEL_ITEM_LEVEL"],    formatter = FORMATTERS.ITEM_LEVEL_FLOOR, fixed = false, align = "CENTER" },
+      { id = "ACTIVE_TALENT", label = L["CLP_LABEL_ACTIVE_TALENT"], formatter = FORMATTERS.ACTIVE_TALENT,    fixed = false, align = "CENTER" },
+      { id = "RV",            label = L["CLP_LABEL_RV"],            formatter = FORMATTERS.RV,               fixed = false, align = "CENTER" },
+      { id = "DV",            label = L["CLP_LABEL_DV"],            formatter = FORMATTERS.DV,               fixed = false, align = "CENTER" },
+      { id = "WV",            label = L["CLP_LABEL_WV"],            formatter = FORMATTERS.WV,               fixed = false, align = "CENTER" },
+      { id = "M_SCORE",       label = L["CLP_LABEL_M_SCORE"],       formatter = FORMATTERS.M_SCORE,          fixed = false, align = "CENTER" },
+      { id = "PLAYED",        label = L["CLP_LABEL_PLAYED"],        formatter = FORMATTERS.PLAYED,           fixed = false, align = "CENTER" },
+      { id = "P1",            label = L["CLP_LABEL_P1"],            formatter = FORMATTERS.P1,               fixed = false, align = "CENTER" },
+      { id = "P2",            label = L["CLP_LABEL_P2"],            formatter = FORMATTERS.P2,               fixed = false, align = "CENTER" },
+      { id = "FISHING",       label = L["CLP_LABEL_FISHING"],       formatter = FORMATTERS.FISHING,          fixed = false, align = "CENTER" },
+      { id = "COOKING",       label = L["CLP_LABEL_COOKING"],       formatter = FORMATTERS.COOKING,          fixed = false, align = "CENTER" },
+      { id = "GOLD",          label = L["CLP_LABEL_GOLD"],          formatter = FORMATTERS.GOLD_FLOOR,       fixed = false, align = "RIGHT",  padding = -16 },
+      { id = "CURRENCIES",    label = L["CLP_LABEL_CURRENCIES"],    formatter = "",                          fixed = false, align = "CENTER", width = 64 },
+      { id = "PVP",           label = L["CLP_LABEL_PVP"],           formatter = FORMATTERS.PVP,              fixed = false, align = "CENTER" },
+      { id = "UPDATED",       label = L["CLP_LABEL_UPDATED"],       formatter = FORMATTERS.UPDATED2TA,       fixed = false, align = "CENTER" },
+      { id = "OPERATION",     label = L["CLP_LABEL_OPERATION"],     formatter = "",                          fixed = true,  align = "CENTER", width = 64 },
     },
   },
 }
@@ -647,30 +690,30 @@ function addon:Util_CreateBanner(name, parent, title, theme)
   banner:SetHeight(theme.HEIGHT)
   banner:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
 
-  local bg = banner:CreateTexture(nil, "BACKGROUND")
-  bg:SetAllPoints()
-  bg:SetColorTexture(unpack(theme.BG.COLOR))
+  banner.bg = banner:CreateTexture(nil, "BACKGROUND")
+  banner.bg:SetAllPoints()
+  banner.bg:SetColorTexture(unpack(theme.BG.COLOR))
 
-  local line = banner:CreateTexture(nil, "OVERLAY")
-  line:SetHeight(theme.LINE.HEIGHT)
-  line:SetPoint("BOTTOMLEFT", banner, "BOTTOMLEFT", 0, 0)
-  line:SetPoint("BOTTOMRIGHT", banner, "BOTTOMRIGHT", 0, 0)
-  line:SetColorTexture(unpack(theme.LINE.COLOR))
+  banner.line = banner:CreateTexture(nil, "OVERLAY")
+  banner.line:SetHeight(theme.LINE.HEIGHT)
+  banner.line:SetPoint("BOTTOMLEFT", banner, "BOTTOMLEFT", 0, 0)
+  banner.line:SetPoint("BOTTOMRIGHT", banner, "BOTTOMRIGHT", 0, 0)
+  banner.line:SetColorTexture(unpack(theme.LINE.COLOR))
 
-  local icon = banner:CreateTexture(nil, "ARTWORK")
-  icon:SetPoint("LEFT", unpack(theme.ICON.POINT))
-  icon:SetSize(unpack(theme.ICON.SIZE))
-  icon:SetTexture(theme.ICON.TEXTURE)
+  banner.icon = banner:CreateTexture(nil, "ARTWORK")
+  banner.icon:SetPoint("LEFT", unpack(theme.ICON.POINT))
+  banner.icon:SetSize(unpack(theme.ICON.SIZE))
+  banner.icon:SetTexture(theme.ICON.TEXTURE)
 
-  local t = banner:CreateFontString(nil, "OVERLAY")
-  t:SetFontObject(self.GUI_FONTS["NORMAL"])
-  t:SetPoint("LEFT", banner, "LEFT", unpack(theme.TITLE.POINT))
-  t:SetTextColor(unpack(theme.TITLE.COLOR))
-  t:SetText(title)
+  banner.title = banner:CreateFontString(nil, "OVERLAY")
+  banner.title:SetFontObject(self.GUI_FONTS["NORMAL"])
+  banner.title:SetPoint("LEFT", banner, "LEFT", unpack(theme.TITLE.POINT))
+  banner.title:SetTextColor(unpack(theme.TITLE.COLOR))
+  banner.title:SetText(title)
 
-  local close = addon:Util_CreateButton(nil, banner, theme.CLOSE.TEXTURE, unpack(theme.CLOSE.SIZE))
-  close:SetPoint("RIGHT", banner, "RIGHT", unpack(theme.CLOSE.POINT))
-  close:SetScript("OnClick", function()
+  banner.close = addon:Util_CreateButton(nil, banner, theme.CLOSE.TEXTURE, unpack(theme.CLOSE.SIZE))
+  banner.close:SetPoint("RIGHT", banner, "RIGHT", unpack(theme.CLOSE.POINT))
+  banner.close:SetScript("OnClick", function()
     parent:Hide()
   end)
   return banner
@@ -1371,6 +1414,14 @@ function addon:ClpRefreshGrid()
                 end
               end)
             end
+            if "ACTIVE_TALENT" == meta.id then
+              cell:EnableMouse(true)
+              cell:SetScript("OnMouseDown", function(_self, button)
+                if button == "LeftButton" and cell.text:GetText() then
+                  addon:ShowCtp(_rid)
+                end
+              end)
+            end
             -- vaults tooltip
             if "RV" == meta.id or "DV" == meta.id or "WV" == meta.id then
               cell:EnableMouse(true)
@@ -1804,6 +1855,7 @@ function addon:CreateCgp()
   cgp:Hide()
 
   cgp:SetFrameStrata("DIALOG")
+  cgp:SetFrameLevel(CT_CLP_CGP_LEVEL)
   cgp:SetSize(CT_THEME.CGP.WIDTH, CT_THEME.CGP.HEIGHT)
 
   local bg = cgp:CreateTexture(nil, "BACKGROUND")
@@ -2031,7 +2083,7 @@ function addon:ShowCgp(id)
   end
 
   if stats.specialization then
-    detail.spec.text:SetText(FORMATTERS.CLASS_COLOR(character, stats.specialization))
+    detail.spec.text:SetText(CLASS_COLOR(character, stats.specialization))
     detail.spec:Show()
   else
     detail.spec.text:SetText("")
@@ -2083,6 +2135,82 @@ function addon:ShowCgp(id)
     end
   end
   self.CT_CGP:Show()
+end
+
+-- ================================================
+-- Characters Talent Panel for copy talent string
+-- ================================================
+function addon:CreateCtp()
+  -- Make sure ONLY Create it once to avoid OOM
+  if self.CT_CTP then
+    return
+  end
+  --
+  local ctp = addon:Util_CreateBaseWindow("CT_CHARACTER_TALENT_PANEL", self.CT_CLP)
+  self.CT_CTP = ctp
+  ctp:Hide()
+
+  ctp:SetFrameStrata("DIALOG")
+  ctp:SetFrameLevel(CT_CLP_CTP_LEVEL)
+  ctp:SetSize(CT_THEME.CTP.WIDTH, CT_THEME.CTP.HEIGHT)
+
+  ctp.bg = ctp:CreateTexture(nil, "BACKGROUND")
+  ctp.bg:SetAllPoints()
+  ctp.bg:SetColorTexture(unpack(CT_THEME.CTP.BG.COLOR))
+
+  ctp.banner = addon:Util_CreateBanner(
+    "CT_CHARACTER_TALENT_PANEL_BANNER",
+    self.CT_CTP,
+    L["CGP_BANNER"],
+    CT_THEME.CTP.BANNER
+  )
+
+  ctp.scroll = CreateFrame("ScrollFrame", "CT_CHARACTER_TALENT_PANEL_CONTENT", self.CT_CTP, "UIPanelScrollFrameTemplate")
+  ctp.scroll:SetPoint("TOPLEFT", ctp.banner, "BOTTOMLEFT", CT_THEME.CTP.LEFT_PADDING, 0)
+  ctp.scroll:SetPoint("BOTTOMRIGHT", self.CT_CTP, "BOTTOMRIGHT", -CT_THEME.CTP.SCROLL_BAR_PADDING, 0)
+
+  ctp.editor = CreateFrame("EditBox", "CT_CHARACTER_TALENT_PANEL_EDITOR", ctp.scroll)
+  ctp.editor:SetWidth(ctp.scroll:GetWidth())
+  ctp.editor:SetFontObject(ChatFontNormal)
+  -- ctp.editor:SetFontObject(self.GUI_FONTS["SMALL"])
+  ctp.editor:SetPoint("TOPLEFT", 0, 0)
+  ctp.editor:SetMultiLine(true)
+  ctp.editor:SetAutoFocus(false)
+
+  ctp.editor:SetScript("OnKeyDown", function(_self, key)
+    if key == "ESCAPE" then
+      ctp:Hide()
+      return
+    end
+  end)
+
+  ctp.scroll:SetScrollChild(ctp.editor)
+end
+
+function addon:ShowCtp(id)
+  addon:CreateCtp()
+
+  local character = CharactersTrackerDB.CHARACTERS[id]
+  if not character or not character.name or not character.talents or not character.talents.active then
+    return
+  end
+
+  self.CT_CTP:Hide()
+
+  local title = self.CT_CTP.banner.title
+  local scroll = self.CT_CTP.scroll
+  local editor = self.CT_CTP.editor
+  title:SetText(string.format("%s-%s    %s", FORMATTERS.NAME(character), FORMATTERS.ACTIVE_TALENT(character), L["MISC_COPY_TIPS"]))
+
+  local talent = character.talents.active.talent
+  editor:SetText(talent)
+  editor:SetScript("OnTextChanged", function(_self, isUserInput)
+    if isUserInput then
+      _self:SetText(talent)
+    end
+  end)
+  scroll:SetVerticalScroll(0)
+  self.CT_CTP:Show()
 end
 
 -- ==========================================

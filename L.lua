@@ -14,6 +14,9 @@ local L = setmetatable({}, {
 
 -- 注册全局或 addon 内部局部变量（这里我们直接绑定到 L 方便调用）
 CharactersTracker_Locale = L
+-- ====================================================================
+-- 1.默认及英文环境 (enUS)
+-- ====================================================================
 L["CT_TITLE"] = "Characters Tracker"
 L["FB_FUNC"] = "Warband Characters Tracker"
 L["FB_L1"] = "Hold Left-Click: Drag to reposition button"
@@ -55,6 +58,7 @@ L["CLP_LABEL_FACTION"] = "Faction"
 L["CLP_LABEL_ZONE"] = "Zone"
 L["CLP_LABEL_SUBZONE"] = "Sub Zone"
 L["CLP_LABEL_ITEM_LEVEL"] = "Item Level"
+L["CLP_LABEL_ACTIVE_TALENT"] = "Active Talent"
 L["CLP_LABEL_RV"] = "Raids Vault"
 L["CLP_LABEL_DV"] = "Dungeons Vault"
 L["CLP_LABEL_WV"] = "World Vault"
@@ -98,9 +102,11 @@ L["PROF_EQUIPMENT"] = "Profession Equipment"
 L["PROF_CONCENTRATION"] = "Concentration:"
 L["PROF_MISSING_TIPS_L1"] = "Please open any prof window while %s logged to sync data;"
 L["PROF_MISSING_TIPS_L2"] = "The prof window could be Mining, Alchemy, Enchanting, etc."
+-- Misc
+L["MISC_COPY_TIPS"] = "Select content and press Ctrl+C to copy"
 
 -- ====================================================================
--- 简体中文环境 (zhCN)
+-- 2.简体中文环境 (zhCN)
 -- ====================================================================
 if currentLocale == "zhCN" then
   L["CT_TITLE"] = "角色追踪"
@@ -144,6 +150,7 @@ if currentLocale == "zhCN" then
   L["CLP_LABEL_ZONE"] = "地区"
   L["CLP_LABEL_SUBZONE"] = "区域"
   L["CLP_LABEL_ITEM_LEVEL"] = "装备等级"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "启用天赋"
   L["CLP_LABEL_RV"] = "团队副本"
   L["CLP_LABEL_DV"] = "地下城"
   L["CLP_LABEL_WV"] = "地下堡/世界"
@@ -187,10 +194,12 @@ if currentLocale == "zhCN" then
   L["PROF_CONCENTRATION"] = "专注:"
   L["PROF_MISSING_TIPS_L1"] = "请在登录角色 %s 时，至少一次打开任意专业窗口同步专业信息；"
   L["PROF_MISSING_TIPS_L2"] = "专业窗口可以是采矿、制皮、附魔等任意其中一个。"
+  -- Misc
+  L["MISC_COPY_TIPS"] = "选取内容并按 Ctrl+C 复制"
 end
 
 -- ====================================================================
--- 繁体中文环境 (zhTW)
+-- 3.繁体中文环境 (zhTW)
 -- ====================================================================
 if currentLocale == "zhTW" then
   L["CT_TITLE"] = "角色追蹤"
@@ -234,6 +243,7 @@ if currentLocale == "zhTW" then
   L["CLP_LABEL_ZONE"] = "地區"
   L["CLP_LABEL_SUBZONE"] = "區域"
   L["CLP_LABEL_ITEM_LEVEL"] = "裝備等級"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "啟用天賦"
   L["CLP_LABEL_RV"] = "團隊副本"
   L["CLP_LABEL_DV"] = "地下城"
   L["CLP_LABEL_WV"] = "探究/世界"
@@ -277,10 +287,12 @@ if currentLocale == "zhTW" then
   L["PROF_CONCENTRATION"] = "專注:"
   L["PROF_MISSING_TIPS_L1"] = "請在登入角色 %s 時，至少一次打開任意專業窗口同步專業訊息；"
   L["PROF_MISSING_TIPS_L2"] = "專業視窗可以是採礦、製皮、附魔等任意其中一個。"
+  -- Misc
+  L["MISC_COPY_TIPS"] = "選取內容並按 Ctrl+C 複製"
 end
 
 -- ====================================================================
--- 德语环境 (deDE)
+-- 4.德语环境 (deDE)
 -- ====================================================================
 if currentLocale == "deDE" then
   L["CT_TITLE"] = "Charakter-Tracker"
@@ -324,6 +336,7 @@ if currentLocale == "deDE" then
   L["CLP_LABEL_ZONE"] = "Zone"
   L["CLP_LABEL_SUBZONE"] = "Subzone"
   L["CLP_LABEL_ITEM_LEVEL"] = "Gegenstandsstufe"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Aktiver Talentbaum"
   L["CLP_LABEL_RV"] = "Schlachtzug-Schatzkammer"
   L["CLP_LABEL_DV"] = "Dungeon-Schatzkammer"
   L["CLP_LABEL_WV"] = "Welt-Schatzkammer"
@@ -368,10 +381,12 @@ if currentLocale == "deDE" then
   L["PROF_CONCENTRATION"] = "Konzentration:"
   L["PROF_MISSING_TIPS_L1"] = "Bitte öffne ein Berufsfenster, während du mit %s eingeloggt bist, um zu synchronisieren;"
   L["PROF_MISSING_TIPS_L2"] = "Das Berufsfenster kann Bergbau, Alchemie, Verzauberkunst usw. sein."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Inhalt auswählen und Strg+C zum Kopieren drücken"
 end
 
 -- ====================================================================
--- 法语环境 (frFR)
+-- 5.法语环境 (frFR)
 -- ====================================================================
 if currentLocale == "frFR" then
   L["CT_TITLE"] = "Suivi des Personnages"
@@ -415,6 +430,7 @@ if currentLocale == "frFR" then
   L["CLP_LABEL_ZONE"] = "Zone"
   L["CLP_LABEL_SUBZONE"] = "Sous-zone"
   L["CLP_LABEL_ITEM_LEVEL"] = "Niveau d'objet"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Talent actif"
   L["CLP_LABEL_RV"] = "Coffre de Raid"
   L["CLP_LABEL_DV"] = "Coffre de Donjon"
   L["CLP_LABEL_WV"] = "Coffre Monde"
@@ -459,10 +475,12 @@ if currentLocale == "frFR" then
   L["PROF_CONCENTRATION"] = "Concentration :"
   L["PROF_MISSING_TIPS_L1"] = "Veuillez ouvrir une fenêtre de métier lors de la connexion avec %s pour synchroniser ;"
   L["PROF_MISSING_TIPS_L2"] = "La fenêtre de métier peut être Minage, Alchimie, Enchantement, etc."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Sélectionnez le contenu et appuyez sur Ctrl+C pour copier"
 end
 
 -- ====================================================================
--- 西班牙语 - 欧洲环境 (esES)
+-- 6.西班牙语 - 欧洲环境 (esES)
 -- ====================================================================
 if currentLocale == "esES" then
   L["CT_TITLE"] = "Rastreador de Personajes"
@@ -506,6 +524,7 @@ if currentLocale == "esES" then
   L["CLP_LABEL_ZONE"] = "Zona"
   L["CLP_LABEL_SUBZONE"] = "Subzona"
   L["CLP_LABEL_ITEM_LEVEL"] = "Nivel de objeto"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Talento activo"
   L["CLP_LABEL_RV"] = "Cámara de Banda"
   L["CLP_LABEL_DV"] = "Cámara de Mazmorras"
   L["CLP_LABEL_WV"] = "Cámara del Mundo"
@@ -551,10 +570,12 @@ if currentLocale == "esES" then
   L["PROF_MISSING_TIPS_L1"] =
   "Abre cualquier ventana de profesión mientras estás conectado con %s para sincronizar datos;"
   L["PROF_MISSING_TIPS_L2"] = "La ventana de profesión puede ser Minería, Alquimia, Encantamiento, etc."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Selecciona el contenido y pulsa Ctrl+C para copiar"
 end
 
 -- ====================================================================
--- 西班牙语 - 拉丁美洲环境 (esMX)
+-- 7.西班牙语 - 拉丁美洲环境 (esMX)
 -- ====================================================================
 if currentLocale == "esMX" then
   L["CT_TITLE"] = "Rastreador de Personajes"
@@ -598,6 +619,7 @@ if currentLocale == "esMX" then
   L["CLP_LABEL_ZONE"] = "Zona"
   L["CLP_LABEL_SUBZONE"] = "Subzona"
   L["CLP_LABEL_ITEM_LEVEL"] = "Nivel de objeto"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Talento activo"
   L["CLP_LABEL_RV"] = "Bóveda de Banda"
   L["CLP_LABEL_DV"] = "Bóveda de Calabozos"
   L["CLP_LABEL_WV"] = "Bóveda del Mundo"
@@ -643,10 +665,12 @@ if currentLocale == "esMX" then
   L["PROF_MISSING_TIPS_L1"] =
   "Abre cualquier ventana de profesión mientras estás conectado con %s para sincronizar datos;"
   L["PROF_MISSING_TIPS_L2"] = "La ventana de profesión puede ser Minería, Alquimia, Encantamiento, etc."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Selecciona el contenido y presiona Ctrl+C para copiar"
 end
 
 -- ====================================================================
--- 葡萄牙语 - 巴西环境 (ptBR)
+-- 8.葡萄牙语 - 巴西环境 (ptBR)
 -- ====================================================================
 if currentLocale == "ptBR" then
   L["CT_TITLE"] = "Rastreador de Personagens"
@@ -690,6 +714,7 @@ if currentLocale == "ptBR" then
   L["CLP_LABEL_ZONE"] = "Zona"
   L["CLP_LABEL_SUBZONE"] = "Subzona"
   L["CLP_LABEL_ITEM_LEVEL"] = "Nível de Item"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Talento ativo"
   L["CLP_LABEL_RV"] = "Cofre de Raide"
   L["CLP_LABEL_DV"] = "Cofre de Masmorra"
   L["CLP_LABEL_WV"] = "Cofre do Mundo"
@@ -735,10 +760,12 @@ if currentLocale == "ptBR" then
   L["PROF_MISSING_TIPS_L1"] =
   "Abra qualquer janela de profissão enquanto estiver conectado com %s para sincronizar os dados;"
   L["PROF_MISSING_TIPS_L2"] = "A janela de profissão pode ser Mineração, Alquimia, Encantamento, etc."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Selecione o conteúdo e pressione Ctrl+C para copiar"
 end
 
 -- ====================================================================
--- 俄语环境 (ruRU)
+-- 9.俄语环境 (ruRU)
 -- ====================================================================
 if currentLocale == "ruRU" then
   L["CT_TITLE"] = "Отслеживание персонажей"
@@ -782,6 +809,7 @@ if currentLocale == "ruRU" then
   L["CLP_LABEL_ZONE"] = "Зона"
   L["CLP_LABEL_SUBZONE"] = "Подзона"
   L["CLP_LABEL_ITEM_LEVEL"] = "Уровень предметов"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Активный талант"
   L["CLP_LABEL_RV"] = "Хранилище (Рейды)"
   L["CLP_LABEL_DV"] = "Хранилище (Подземелья)"
   L["CLP_LABEL_WV"] = "Хранилище (Мир)"
@@ -826,10 +854,12 @@ if currentLocale == "ruRU" then
   L["PROF_CONCENTRATION"] = "Концентрация:"
   L["PROF_MISSING_TIPS_L1"] = "Пожалуйста, откройте любое окно профессии при входе за %s для синхронизации;"
   L["PROF_MISSING_TIPS_L2"] = "Окном профессии может быть Горное дело, Алхимия, Наложение чар и т.д."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Выделите содержимое и нажмите Ctrl+C для копирования"
 end
 
 -- ====================================================================
--- 意大利语环境 (itIT)
+-- 10.意大利语环境 (itIT)
 -- ====================================================================
 if currentLocale == "itIT" then
   L["CT_TITLE"] = "Tracciatore Personaggi"
@@ -873,6 +903,7 @@ if currentLocale == "itIT" then
   L["CLP_LABEL_ZONE"] = "Zona"
   L["CLP_LABEL_SUBZONE"] = "Sottozona"
   L["CLP_LABEL_ITEM_LEVEL"] = "Livello Oggetto"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "Talento attivo"
   L["CLP_LABEL_RV"] = "Cassa Incursione"
   L["CLP_LABEL_DV"] = "Cassa Spedizione"
   L["CLP_LABEL_WV"] = "Cassa Mondo"
@@ -918,10 +949,12 @@ if currentLocale == "itIT" then
   L["PROF_MISSING_TIPS_L1"] =
   "Apri qualsiasi finestra di professione mentre sei connesso con %s per sincronizzare i dati;"
   L["PROF_MISSING_TIPS_L2"] = "La finestra della professione può essere Estrazione, Alchimia, Incantamento, ecc."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "Seleziona il contenuto e premi Ctrl+C per copiare"
 end
 
 -- ====================================================================
--- 韩语环境 (koKR)
+-- 11.韩语环境 (koKR)
 -- ====================================================================
 if currentLocale == "koKR" then
   L["CT_TITLE"] = "캐릭터 추적기"
@@ -965,6 +998,7 @@ if currentLocale == "koKR" then
   L["CLP_LABEL_ZONE"] = "지역"
   L["CLP_LABEL_SUBZONE"] = "세부 지역"
   L["CLP_LABEL_ITEM_LEVEL"] = "아이템 레벨"
+  L["CLP_LABEL_ACTIVE_TALENT"] = "활성화된 특성"
   L["CLP_LABEL_RV"] = "레이드 금고"
   L["CLP_LABEL_DV"] = "던전 금고"
   L["CLP_LABEL_WV"] = "세계 금고"
@@ -1008,4 +1042,6 @@ if currentLocale == "koKR" then
   L["PROF_CONCENTRATION"] = "집중:"
   L["PROF_MISSING_TIPS_L1"] = "데이터를 동기화하려면 %s 접속 중 아무 전문 기술 창이나 열어주세요."
   L["PROF_MISSING_TIPS_L2"] = "채광, 연금술, 마법부여 등의 전문 기술 창이면 됩니다."
+  -- Misc
+  L["MISC_COPY_TIPS"] = "내용을 선택하고 Ctrl+C를 눌러 복사하세요"
 end
